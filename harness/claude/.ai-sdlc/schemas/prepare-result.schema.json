@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "artifacts", "ready_specs", "blocking_questions", "summary"],
+  "properties": {
+    "status": {"enum": ["READY", "PARTIAL", "NEEDS_INPUT", "BLOCKED"]},
+    "artifacts": {"type": "array", "items": {"type": "string"}},
+    "ready_specs": {"type": "array", "items": {"type": "string"}},
+    "blocking_questions": {"type": "array", "items": {"type": "string"}},
+    "summary": {"type": "string"}
+  }
+}
