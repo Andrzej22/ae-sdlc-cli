@@ -1,0 +1,24 @@
+---
+description: Deny secrets access and require confirmation for remote/destructive mutations
+alwaysApply: true
+---
+
+# Security and Safety Rules
+
+Never read, write, or modify secrets or environment configuration files:
+
+- `.env`
+- `**/.env`
+- `**/.env.local`
+- `**/.env.production`
+- `**/.env.staging`
+- `**/credentials.json`
+- `**/service-account.json`
+
+Do not automatically run destructive or remote infrastructure mutations without explicit confirmation:
+
+- `git push`
+- `terraform apply`, `terraform destroy`, `terraform import`
+- `kubectl apply`, `kubectl delete`, `kubectl replace`, `kubectl patch`
+
+In unattended/headless runs, treat those mutations as refused rather than inventing approval.

@@ -1,0 +1,3 @@
+interface:
+  display_name: "work-status"
+  short_description: "Inspect durable spec state deterministically."

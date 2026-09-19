@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ae-sdlc"
+version = "0.1.0"
+description = "Install the thin command-driven AI-SDLC harness into a project for one or more coding-agent CLIs."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+ae-sdlc = "ae_sdlc.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ae_sdlc"]

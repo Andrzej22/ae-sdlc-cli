@@ -1,0 +1,36 @@
+# Thin repo-local Codex configuration.
+default_permissions = "project-edit"
+
+[permissions.project-edit]
+description = "Edit the current project without command-level network access."
+extends = ":workspace"
+
+[permissions.project-edit.filesystem]
+glob_scan_max_depth = 5
+
+[permissions.project-edit.filesystem.":workspace_roots"]
+".env" = "deny"
+"**/.env" = "deny"
+"**/.env.local" = "deny"
+"**/.env.production" = "deny"
+"**/.env.staging" = "deny"
+"**/credentials.json" = "deny"
+"**/service-account.json" = "deny"
+
+[permissions.project-edit.network]
+enabled = false
+
+[permissions.project-edit-net]
+description = "Project edit plus narrow package/download network access."
+extends = ":workspace"
+
+[permissions.project-edit-net.network]
+enabled = true
+
+[permissions.project-edit-net.network.domains]
+"registry.npmjs.org" = "allow"
+"pypi.org" = "allow"
+"files.pythonhosted.org" = "allow"
+"github.com" = "allow"
+"*.github.com" = "allow"
+"objects.githubusercontent.com" = "allow"
