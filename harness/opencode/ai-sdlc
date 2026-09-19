@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+SCRIPTS = ROOT / "scripts" / "ai-sdlc"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+from work_store import WorkStore
+import run_workflow
+from run_workflow import run_opencode
+
+
+def run_opencode_cli(prompt: str, command: str, schema: Path, model: str | None) -> int:
+    if shutil.which("opencode") is None:
+        raise SystemExit("opencode CLI not found on PATH")
+    rc, result = run_opencode(prompt, command, schema, model)
+    if result is not None:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    else:
+        print("no structured result produced", file=sys.stderr)
+        rc = rc or 1
+    return rc
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Thin command-driven AI-SDLC")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("prepare-work")
+    p.add_argument("request", nargs="+")
+    p.add_argument("--model")
+
+    p = sub.add_parser("execute-work")
+    p.add_argument("refs", nargs="+")
+    p.add_argument("--model")
+
+    p = sub.add_parser("workflow")
+    p.add_argument("workflow")
+    p.add_argument("scope")
+    p.add_argument("--model")
+    p.add_argument("--max-specs", type=int)
+
+    p = sub.add_parser("status")
+    p.add_argument("scope", nargs="?")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--ready", action="store_true")
+    g.add_argument("--blocked", action="store_true")
+
+    sub.add_parser("validate")
+
+    a = ap.parse_args()
+
+    if a.cmd == "prepare-work":
+        req = " ".join(a.request)
+        prompt = f"{req}\n\nNon-interactive invocation. If blocking input is missing, persist the question and return NEEDS_INPUT; do not invent an answer."
+        return run_opencode_cli(prompt, "prepare-work", ROOT / ".ai-sdlc" / "schemas" / "prepare-result.schema.json", a.model)
+
+    if a.cmd == "execute-work":
+        refs = " ".join(a.refs)
+        prompt = f"{refs}\n\nThin execution mode. Do not call harness helper scripts or start quality/review/verification phases."
+        return run_opencode_cli(prompt, "execute-work", ROOT / ".ai-sdlc" / "schemas" / "execute-result.schema.json", a.model)
+
+    if a.cmd == "workflow":
+        argv = [a.workflow, a.scope]
+        if a.model:
+            argv += ["--model", a.model]
+        if a.max_specs:
+            argv += ["--max-specs", str(a.max_specs)]
+        return run_workflow.main(argv)
+
+    if a.cmd == "status":
+        store = WorkStore()
+        only = "READY" if a.ready else "BLOCKED" if a.blocked else None
+        for line in store.summary_lines(a.scope, only_status=only):
+            print(line)
+        return 0
+
+    if a.cmd == "validate":
+        return subprocess.run([sys.executable, str(SCRIPTS / "validate_harness.py")], cwd=ROOT).returncode
+
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
