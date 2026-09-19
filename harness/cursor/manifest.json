@@ -1,0 +1,31 @@
+{
+  "name": "cursor-command-driven-sdlc-thin",
+  "version": "4.0-thin-runtime",
+  "user_facing_skills": [
+    "prepare-work",
+    "execute-work",
+    "run-workflow",
+    "work-status"
+  ],
+  "native_supporting_agents": [],
+  "artifact_store": {
+    "product": "docs/product",
+    "project_memory": "docs/project-memory"
+  },
+  "workflow_runner": "scripts/ai-sdlc/run_workflow.py",
+  "shell_entrypoint": "./ai-sdlc",
+  "default_execution_policy": "thin",
+  "removed_by_design": [
+    "automatic quality gates",
+    "verifier/reviewer/researcher subagents",
+    "post-implementation review loops",
+    "engineering evidence artifacts",
+    "per-tool hook scripts"
+  ],
+  "notes": [
+    "Spec is the default executable unit.",
+    "execute-work must not invoke harness helper scripts.",
+    "User-facing interfaces are Cursor skills (.cursor/skills/*/SKILL.md) with disable-model-invocation.",
+    "Background runner uses one fresh headless Cursor Agent CLI run per ready spec."
+  ]
+}
