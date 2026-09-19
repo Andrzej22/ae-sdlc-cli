@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "work_items", "changed_files", "command_run", "blockers", "summary"],
+  "properties": {
+    "status": {"enum": ["COMPLETED", "PARTIAL", "BLOCKED", "FAILED", "NEEDS_INPUT"]},
+    "work_items": {"type": "array", "items": {"type": "string"}},
+    "changed_files": {"type": "array", "items": {"type": "string"}},
+    "command_run": {"type": ["string", "null"]},
+    "blockers": {"type": "array", "items": {"type": "string"}},
+    "summary": {"type": "string"}
+  }
+}

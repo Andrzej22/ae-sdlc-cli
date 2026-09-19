@@ -1,0 +1,3 @@
+interface:
+  display_name: "execute-work"
+  short_description: "Implement ready specs with a thin low-overhead runtime path."
