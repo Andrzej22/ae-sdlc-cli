@@ -13,8 +13,8 @@ Implement ready product work with minimal harness overhead.
 
 During this command:
 
-- **do not call** `./ai-sdlc`;
-- **do not call** `scripts/ai-sdlc/*`;
+- **do not call** `./ae-sdlc`;
+- **do not call** `scripts/ae-sdlc/*`;
 - **do not invoke** another opencode session;
 - **do not spawn** subagents;
 - **do not read** quality-policy/quality-gate files;

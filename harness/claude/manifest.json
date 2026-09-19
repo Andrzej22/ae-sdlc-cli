@@ -12,8 +12,8 @@
     "product": "docs/product",
     "project_memory": "docs/project-memory"
   },
-  "workflow_runner": "scripts/ai-sdlc/run_workflow.py",
-  "shell_entrypoint": "./ai-sdlc",
+  "workflow_runner": "scripts/ae-sdlc/run_workflow.py",
+  "shell_entrypoint": "./ae-sdlc",
   "default_execution_policy": "thin",
   "removed_by_design": [
     "automatic quality gates",

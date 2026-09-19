@@ -1,12 +1,12 @@
 # ae-sdlc
 
-Installs a thin, command-driven AI-SDLC harness into a project for one or more coding-agent CLIs
+Installs a thin, command-driven AE-SDLC harness into a project for one or more coding-agent CLIs
 (Claude Code, Codex, Cursor, opencode, Antigravity).
 
 ```bash
 pipx install .            # or: uv tool install .
 ae-sdlc init --providers claude,codex      # or: --providers all, or run without flags to pick interactively
-cd <project> && ./ai-sdlc validate
+cd <project> && ./ae-sdlc validate
 ```
 
 `init` never modifies an existing file. If a file already exists with different content

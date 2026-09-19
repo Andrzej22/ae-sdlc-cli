@@ -9,14 +9,14 @@ disable-model-invocation: true
 Use:
 
 ```bash
-./ai-sdlc status <EPIC-or-SPEC>
+./ae-sdlc status <EPIC-or-SPEC>
 ```
 
 or:
 
 ```bash
-./ai-sdlc status --ready
-./ai-sdlc status --blocked
+./ae-sdlc status --ready
+./ae-sdlc status --blocked
 ```
 
 This is a deterministic repository query. Do not implement code.

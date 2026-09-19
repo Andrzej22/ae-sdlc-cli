@@ -3,7 +3,7 @@ name: work-status
 description: Inspect durable epic/spec state without implementation. Prefer the deterministic status command so no LLM reasoning is spent reconstructing workflow state.
 disable-model-invocation: true
 argument-hint: "[EPIC-or-SPEC | --ready | --blocked]"
-allowed-tools: Bash(./ai-sdlc status:*)
+allowed-tools: Bash(./ae-sdlc status:*)
 ---
 
 # Work Status
@@ -11,14 +11,14 @@ allowed-tools: Bash(./ai-sdlc status:*)
 Use:
 
 ```bash
-./ai-sdlc status <EPIC-or-SPEC>
+./ae-sdlc status <EPIC-or-SPEC>
 ```
 
 or:
 
 ```bash
-./ai-sdlc status --ready
-./ai-sdlc status --blocked
+./ae-sdlc status --ready
+./ae-sdlc status --blocked
 ```
 
 This is a deterministic repository query. Do not implement code.

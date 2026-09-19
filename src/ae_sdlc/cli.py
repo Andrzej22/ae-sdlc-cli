@@ -57,12 +57,12 @@ def cmd_init(args: argparse.Namespace) -> int:
         print("merge by hand, then delete the sidecar:")
         for rel in res.conflicts:
             print(f"  ! {rel[:-len(installer.SIDECAR)]}  <-  {rel}")
-    print("\nNext: ./ai-sdlc validate")
+    print("\nNext: ./ae-sdlc validate")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="ae-sdlc", description="Thin command-driven AI-SDLC harness installer")
+    ap = argparse.ArgumentParser(prog="ae-sdlc", description="Thin command-driven AE-SDLC harness installer")
     ap.add_argument("--version", action="version", version=f"ae-sdlc {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 

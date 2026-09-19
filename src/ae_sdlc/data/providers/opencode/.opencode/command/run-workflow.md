@@ -8,13 +8,13 @@ argument-hint: "<workflow-name> <EPIC-or-SPEC>"
 For unattended/batch execution, invoke the repository runner once via the Bash tool:
 
 ```bash
-./ai-sdlc workflow <workflow-name> <scope>
+./ae-sdlc workflow <workflow-name> <scope>
 ```
 
 Example:
 
 ```bash
-./ai-sdlc workflow nightly EPIC-001
+./ae-sdlc workflow nightly EPIC-001
 ```
 
 The runner owns scheduling and status transitions. It loads artifact metadata in-process and starts one fresh headless opencode run per eligible spec.

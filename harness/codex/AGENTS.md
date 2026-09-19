@@ -2,7 +2,7 @@
 
 ## Operating Model
 
-This repository uses a thin command-driven AI-SDLC.
+This repository uses a thin command-driven AE-SDLC.
 
 The explicit user-facing skills are:
 
@@ -65,7 +65,7 @@ A spec is the default executable unit. Do not create stories/tasks merely to mak
 
 ## Script Discipline
 
-During `$execute-work`, do not call `./ai-sdlc`, `scripts/ai-sdlc/*`, or other harness bookkeeping scripts.
+During `$execute-work`, do not call `./ae-sdlc`, `scripts/ae-sdlc/*`, or other harness bookkeeping scripts.
 
 Resolve artifacts with direct repository search/read operations, edit the implementation, update the spec status directly, and stop.
 

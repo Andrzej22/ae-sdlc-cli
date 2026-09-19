@@ -14,11 +14,11 @@ The user-facing interface is intentionally small:
 Shell/background equivalents:
 
 ```bash
-./ai-sdlc prepare-work "Add invoice retry support"
-./ai-sdlc execute-work SPEC-001
-./ai-sdlc execute-work EPIC-001
-./ai-sdlc workflow nightly EPIC-001
-./ai-sdlc status EPIC-001
+./ae-sdlc prepare-work "Add invoice retry support"
+./ae-sdlc execute-work SPEC-001
+./ae-sdlc execute-work EPIC-001
+./ae-sdlc workflow nightly EPIC-001
+./ae-sdlc status EPIC-001
 ```
 
 ## What changed from the heavier harness
@@ -72,7 +72,7 @@ A bounded request may become a standalone spec without an epic.
 ### Non-interactive prepare
 
 ```bash
-./ai-sdlc prepare-work "Add organization invitations"
+./ae-sdlc prepare-work "Add organization invitations"
 ```
 
 If a blocking decision is missing, the run returns `NEEDS_INPUT` and persists the exact question instead of inventing an answer.
@@ -136,7 +136,7 @@ For many independent specs, prefer the background workflow so each spec gets a f
 ## 3. Run an overnight/background workflow
 
 ```bash
-./ai-sdlc workflow nightly EPIC-001
+./ae-sdlc workflow nightly EPIC-001
 ```
 
 The scheduler:
@@ -156,13 +156,13 @@ The bundled runner is sequential by design. Safe parallel mutation would require
 Workflow config:
 
 ```text
-.ai-sdlc/workflows/nightly.toml
+.ae-sdlc/workflows/nightly.toml
 ```
 
 The runner writes operational reports to:
 
 ```text
-.ai-sdlc-runtime/runs/
+.ae-sdlc-runtime/runs/
 ```
 
 which is git-ignored.
@@ -180,9 +180,9 @@ Interactive:
 Shell, without an LLM:
 
 ```bash
-./ai-sdlc status EPIC-001
-./ai-sdlc status --ready
-./ai-sdlc status --blocked
+./ae-sdlc status EPIC-001
+./ae-sdlc status --ready
+./ae-sdlc status --blocked
 ```
 
 `status` reads repository metadata directly in one process.
@@ -222,12 +222,12 @@ DRAFT -> READY -> DONE
 Copy the bundle into the repository root, then run:
 
 ```bash
-python3 scripts/ai-sdlc/validate_harness.py
+python3 scripts/ae-sdlc/validate_harness.py
 ```
 
 The validator checks harness structure/config only. It is **not** part of `/execute-work`.
 
-Copy `CLAUDE.md`, `.claude/`, `.ai-sdlc/`, `docs/`, `scripts/`, `ai-sdlc` and `.gitignore` entries into the repository root.
+Copy `CLAUDE.md`, `.claude/`, `.ae-sdlc/`, `docs/`, `scripts/`, `ae-sdlc` and `.gitignore` entries into the repository root.
 Review `.claude/settings.json` (deny/ask rules) for your repository. Requires the `claude` CLI on `PATH`.
 
 ---

@@ -33,7 +33,7 @@ PROVIDERS: dict[str, tuple[list[str], str, str]] = {
 # core files whose packaged name differs from the installed name
 RENAMES = {"gitignore": ".gitignore"}
 SKIP_NAMES = {"AGENTS.md.tmpl", "__pycache__"}
-EXECUTABLE = {"ai-sdlc"}
+EXECUTABLE = {"ae-sdlc"}
 
 
 @dataclass
@@ -72,7 +72,7 @@ def render_agents_md(providers: list[str]) -> str:
 
 def existing_providers(target: Path) -> list[str]:
     try:
-        data = json.loads((target / ".ai-sdlc" / "manifest.json").read_text(encoding="utf-8"))
+        data = json.loads((target / ".ae-sdlc" / "manifest.json").read_text(encoding="utf-8"))
         return [p for p in data.get("providers", []) if p in PROVIDERS] if data.get("name") == "ae-sdlc" else []
     except Exception:
         return []
@@ -108,10 +108,10 @@ def build_plan(providers: list[str], target: Path) -> Plan:
         "version": __version__,
         "providers": all_providers,
         "artifact_store": {"product": "docs/product", "project_memory": "docs/project-memory"},
-        "workflow_runner": "scripts/ai-sdlc/run_workflow.py",
-        "shell_entrypoint": "./ai-sdlc",
+        "workflow_runner": "scripts/ae-sdlc/run_workflow.py",
+        "shell_entrypoint": "./ae-sdlc",
     }
-    _add(plan, ".ai-sdlc/manifest.json", (json.dumps(manifest, indent=2) + "\n").encode())
+    _add(plan, ".ae-sdlc/manifest.json", (json.dumps(manifest, indent=2) + "\n").encode())
     return plan
 
 
@@ -123,7 +123,7 @@ def apply(plan: Plan, target: Path, dry_run: bool = False) -> Result:
             if dest.read_bytes() == data:
                 res.unchanged.append(rel)
                 continue
-            if rel == ".ai-sdlc/manifest.json" and _is_ours(dest):
+            if rel == ".ae-sdlc/manifest.json" and _is_ours(dest):
                 pass  # our own manifest: update in place (provider list is merged in build_plan)
             else:
                 dest = dest.with_name(dest.name + SIDECAR)

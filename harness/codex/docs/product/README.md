@@ -1,6 +1,6 @@
 # Product Work
 
-This directory is the durable product source of truth for the thin AI-SDLC.
+This directory is the durable product source of truth for the thin AE-SDLC.
 
 Prefer epics + executable specs. Do not create stories/tasks unless your repository already uses them for another reason outside this harness.
 
