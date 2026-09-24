@@ -13,6 +13,20 @@ Convert intent into the smallest useful implementation contract.
 
 The default executable artifact is a **spec**, not a story/task hierarchy.
 
+## Supporting skills
+
+Load via the Skill tool. Use them as knowledge sources, not personas:
+no mentoring, quizzing, or mock-interview behavior. Any question they
+surface goes through the blocking-question rule (step 3).
+
+- `pragmatic-architect` — always, after a bounded look at the code that the
+  feature will touch. Output → spec "Design & Boundaries".
+- `ai-engineering-mentor` — only if the work touches LLM calls, agents, RAG,
+  embeddings, evals, guardrails, or AI streaming UI. Output → spec "AI Design".
+
+Precedence: this skill's rules (minimal artifacts, no story/task hierarchy,
+no application code) override anything the supporting skills suggest.
+
 ## Procedure
 
 1. Search `docs/product/` directly for matching IDs/titles before creating anything.
@@ -24,10 +38,11 @@ The default executable artifact is a **spec**, not a story/task hierarchy.
    - genuinely independent implementation chunks -> epic + multiple specs;
    - already bounded work -> standalone spec.
 6. Do **not** mechanically create stories/tasks for backend/frontend/database/tests.
-7. Write observable acceptance criteria and relevant negative/boundary behavior.
-8. Mark a spec `READY` only when implementation can proceed without inventing material product behavior.
-9. Persist artifacts by editing/creating markdown files directly. Do not call harness helper scripts to do bookkeeping.
-10. Stop before application-code implementation.
+7. For any feature touching an entity, design the client-facing API (see "Client API Design Rule" in AGENTS.md): CRUD completeness, access management, role/permissions in responses, list filtering/pagination, error codes. Record it in the spec's "API Surface" section and list deferred endpoints explicitly.
+8. Write observable acceptance criteria and relevant negative/boundary behavior.
+9. Mark a spec `READY` only when implementation can proceed without inventing material product behavior.
+10. Persist artifacts by editing/creating markdown files directly. Do not call harness helper scripts to do bookkeeping.
+11. Stop before application-code implementation.
 
 ## ID conventions
 

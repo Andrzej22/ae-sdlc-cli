@@ -1,0 +1,3 @@
+interface:
+  display_name: "ai-engineering-mentor"
+  short_description: "AI system design guidance: LLM, agents, RAG, evals."

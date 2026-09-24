@@ -26,6 +26,25 @@ During this skill:
 
 Use direct repository search/read/edit operations only.
 
+If the tasks involve artificial intelligence, architectural decision-making, or the analysis of implementation-related issues, use the following skill for analysis and implementation: /ai-engineering-mentor
+
+## Supporting skills
+
+- `pragmatic-architect` — load once before writing code. Use its implementation
+  guidance only: follow the boundaries in the spec's "Design & Boundaries".
+  Do not use its review or refactoring modes.
+- `ai-engineering-mentor` — load only if the spec has an "AI Design" section.
+  Use it for implementation idioms (structured outputs, retries, caching,
+  streaming, token budgets), not for revisiting design decisions.
+
+Spec decisions are final. If a supporting skill suggests a different design,
+keep the spec's design and list the suggestion as a follow-up in the final
+response. Supporting skills never lift the hard runtime rules above.
+
+## Ambiguity rule
+Minor gap → choose the conventional option, note it in the final response.
+Material gap (behavior, permissions, data, compatibility) → status: BLOCKED.
+
 ## Procedure
 
 ### 1. Resolve scope once
