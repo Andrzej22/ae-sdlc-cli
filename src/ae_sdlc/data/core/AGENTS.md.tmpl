@@ -65,6 +65,18 @@ A spec is the default executable unit. Do not create stories/tasks merely to mak
 - Do not run full test/lint/build suites unless the user explicitly requests them or the spec explicitly requires them.
 - Stop at unresolved material product or destructive/production decisions.
 
+## Client API Design Rule
+
+For any feature that touches an entity, design the client-facing API in `prepare-work`, not ad hoc during implementation:
+
+- CRUD completeness (create, read, update, delete) or an explicit reason for omission;
+- access management (who can grant/revoke access);
+- the caller's role/permissions in responses (e.g. `my_role`, `permissions`);
+- list endpoints: filtering and pagination;
+- documented error codes.
+
+Record the result in the spec's `API Surface` section and list deferred endpoints explicitly.
+
 ## Script Discipline
 
 During `execute-work`, do not call `./ae-sdlc`, `scripts/ae-sdlc/*`, or other harness bookkeeping scripts.
