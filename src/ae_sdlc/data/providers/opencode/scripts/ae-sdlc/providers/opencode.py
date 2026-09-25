@@ -97,7 +97,7 @@ REQUIRED = ["opencode.json"]
 JSON_FILES = ["opencode.json"]
 FORBIDDEN = [
     ".opencode/agent", ".opencode/agents", ".opencode/plugin",
-    ".opencode/plugins", ".opencode/skill", ".opencode/skills",
+    ".opencode/plugins", ".opencode/skill",
 ]
 
 
