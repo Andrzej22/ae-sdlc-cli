@@ -172,6 +172,19 @@ class _Run:
         self.pending.remove(update["work_id"])
         return refused, None
 
+    def _note_remote_edit(self, claimed: Any) -> None:
+        """Report work edited while its agent ran. The code is already written, so the outcome stands."""
+        if not claimed.revision:
+            return
+        try:
+            with self.open_service() as service:
+                current = service.backend.get(claimed.id).revision
+        except WorkBackendError:
+            return  # applying the owed update reports the outage
+        if current and current != claimed.revision:
+            self.report["remote_edits"].append({"id": claimed.id, "claimed_revision": claimed.revision, "current_revision": current})
+            print(f"warning: {claimed.id} was edited while its agent ran; review the change against the result", file=sys.stderr)
+
     def _finish(self, context: ExecutionContext, rc: int, result: dict) -> bool:
         """Record the outcome and return whether the run may treat this spec as a success."""
         spec_id = context.item.id
@@ -187,6 +200,7 @@ class _Run:
                          *findings],
         }
         self.pending.save(update)
+        self._note_remote_edit(context.item)
         refused, error = self._settle(update)
         if error is not None:
             return False
@@ -329,7 +343,7 @@ def run_workflow(root: Path, argv: list[str] | None, providers: ModuleType, open
                 service.backend.get(settings.scope)
             stamp, run_dir = _new_run_dir(runs_dir or root / ".ae-sdlc-runtime" / "runs", settings.workflow)
             report = {"workflow": settings.workflow, "scope": settings.scope, "started_at": stamp, "completed": [],
-                      "blocked": [], "failed": [], "skipped": [], "pending_updates": [], "error": None}
+                      "blocked": [], "failed": [], "skipped": [], "pending_updates": [], "remote_edits": [], "error": None}
             return _execute(_Run(root, settings, open_service, adapter, provider, providers.BACKGROUND_TAIL,
                                  schema or root / ".ae-sdlc" / "schemas" / "execute-result.schema.json",
                                  run_dir, report, PendingUpdates(root)))

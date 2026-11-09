@@ -40,3 +40,5 @@ The runner never repeats a spec by itself. A stopped spec, including one left `I
 Before it updates the tracker, the runner saves the update under `.ae-sdlc-runtime/pending/`, and removes it once the provider confirms. If the update fails, the code is already written: `./ae-sdlc work recover [ID]` retries only the update and starts no agent.
 
 The runner gives the agent the newest comments, limited by `[comments]` in the workflow file, as untrusted data. The agent returns findings in its result, and the runner posts them only to the spec or items linked to it, using a stable key that prevents duplicates. An epic becomes `DONE` only when it has specs and all of them are `DONE`.
+
+The runner compares a spec's revision before and after its agent runs and lists a difference under `remote_edits` in the report. The outcome still applies, because the code is already written.

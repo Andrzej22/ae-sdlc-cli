@@ -24,6 +24,8 @@ How each agent invokes them is listed in `AGENTS.md` (`/name` for Claude Code, C
 With several providers installed choose one via `--provider <name>` or `AE_SDLC_PROVIDER=<name>`.
 The installed providers are listed in `.ae-sdlc/manifest.json`.
 
+Work items are stored locally by default, or in Linear or Jira. See [WORK_BACKENDS.md](WORK_BACKENDS.md) for setup, status mapping, recovery and troubleshooting.
+
 ## Layout
 
 ```text
