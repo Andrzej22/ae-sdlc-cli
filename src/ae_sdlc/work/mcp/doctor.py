@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..backend import WorkBackendError
+from ..jira_status import StatusPolicy, check_mapping
 from ..linear_status import build_status_mapping
 from . import auth
 from .capabilities import discover_catalog, invoke, is_available, operation, operations
@@ -104,7 +105,19 @@ def _probe_jira(client: McpClient, settings: Mapping[str, str], probe: _Probe) -
     listed = probe.run("live: project access",
                        lambda: read("searchJiraIssuesUsingJql", jql=f'project = "{key}" ORDER BY created DESC',
                                     maxResults=1))
-    names = ("live: comments", "live: relationships", "live: status mapping")
+    probe.run("live: issue types",
+              lambda: invoke(client, operation("jira", "list_issue_types"), {"projectIdOrKey": key},
+                             cloud_id=cloud_id, retry_safe=True).data,
+              lambda data: _names(data, "issueTypes", "values"))
+    def status_mapping() -> StatusPolicy:
+        policy = StatusPolicy(settings)
+        statuses = invoke(client, operation("jira", "list_statuses"), {"mode": "project", "projectKey": key},
+                          cloud_id=cloud_id, retry_safe=True).data
+        check_mapping(policy, statuses, [settings.get("issue_type_spec") or "Task",
+                                         settings.get("issue_type_epic") or "Epic"])
+        return policy
+    probe.run("live: status mapping", status_mapping, lambda policy: policy.describe())
+    names = ("live: comments", "live: relationships", "live: transitions")
     if listed is None:
         probe.skip(*names, reason="project access failed")
         return
@@ -118,7 +131,7 @@ def _probe_jira(client: McpClient, settings: Mapping[str, str], probe: _Probe) -
     transitions = operation("jira", "list_transitions")
     probe.run(names[2],
               lambda: invoke(client, transitions, {"issueIdOrKey": issue}, cloud_id=cloud_id, retry_safe=True).data,
-              lambda data: f"transitions: {_names(data, 'transitions')}")
+              lambda data: _names(data, "transitions"))
 
 
 def run_doctor(provider: str, settings: Mapping[str, str], env: Mapping[str, str] = os.environ) -> list[Check]:

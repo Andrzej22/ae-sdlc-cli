@@ -8,13 +8,16 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .work.backend import WorkBackendError
+from .work.backend import WorkBackendError, WorkConfigError
 from .work.config import read_config, set_backend, write_config
+from .work.jira_status import BLOCKED_LABEL, propose_mapping
 from .work.mcp import auth
 from .work.mcp.capabilities import invoke, operation
 from .work.mcp.client import McpClient, provider_endpoint
 from .work.mcp.doctor import healthy, rows, run_doctor
 from .work.mcp.errors import CredentialsMissing, InvalidResponse
+
+_JIRA_REQUIRED = ("status_draft", "status_ready", "status_in_progress", "status_done")
 
 
 def _warn_on_version_skew(root: Path) -> None:
@@ -75,6 +78,25 @@ def _discover_linear(client: McpClient) -> dict[str, str]:
     return {"team": _choose("team", [(str(t["name"]), str(t["name"])) for t in teams if t.get("name")])}
 
 
+def _confirm_statuses(statuses: list[dict]) -> dict[str, str]:
+    """Save a mapping a person approved; without a terminal, only a complete proposal is accepted."""
+    proposal = propose_mapping(statuses)
+    complete = all(key in proposal for key in _JIRA_REQUIRED)
+    print("Proposed status mapping:")
+    for key in (*_JIRA_REQUIRED, "status_blocked"):
+        print(f"  {key} = {proposal.get(key, '(none)')}")
+    if not sys.stdin.isatty():
+        if not complete:
+            raise WorkConfigError("the status mapping is incomplete; run this command in a terminal to choose")
+        return proposal
+    if complete and input("Use this mapping? [Y/n]: ").strip().lower() != "n":
+        return proposal
+    names = [(str(s["name"]), str(s["name"])) for s in statuses if s.get("name")]
+    chosen = {key: _choose(key, names) for key in _JIRA_REQUIRED}
+    blocked = _choose("status_blocked", [*names, ("", f"no status: use the {BLOCKED_LABEL} label")])
+    return {**chosen, **({"status_blocked": blocked} if blocked else {})}
+
+
 def _discover_jira(client: McpClient) -> dict[str, str]:
     sites = rows(client.call("getAccessibleAtlassianResources", {}, retry_safe=True).data, "resources", "sites")
     cloud_id = _choose("Atlassian site", [(str(s["cloudId"]), str(s.get("url") or s["cloudId"]))
@@ -83,7 +105,9 @@ def _discover_jira(client: McpClient) -> dict[str, str]:
                       cloud_id=cloud_id, retry_safe=True).data
     key = _choose("Jira project", [(str(p["key"]), f"{p['key']} — {p.get('name', '')}")
                                    for p in rows(projects, "values", "projects") if p.get("key")])
-    return {"cloud_id": cloud_id, "project_key": key}
+    statuses = invoke(client, operation("jira", "list_statuses"), {"mode": "project", "projectKey": key},
+                      cloud_id=cloud_id, retry_safe=True).data
+    return {"cloud_id": cloud_id, "project_key": key, **_confirm_statuses(rows(statuses, "statuses"))}
 
 
 def connect(root: Path, provider: str) -> int:

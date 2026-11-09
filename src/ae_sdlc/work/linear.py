@@ -7,7 +7,6 @@ feasibility round trip verified; descriptions use a plain footer line, which nee
 """
 from __future__ import annotations
 
-import hashlib
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -19,13 +18,11 @@ from .mcp.client import McpClient, ToolResponse
 from .mcp.doctor import rows
 from .mcp.errors import InvalidResponse, ToolFailed, TransportFailure
 from .models import Status, WorkComment, WorkItem
+from .remote import BLOCKER_MARKER, BLOCKER_PREFIX, COMMENT_MARKER, name_of, op_key, sort_key
 
 MARKER_LABEL = "ae-sdlc"
 _OP_PREFIX = "ae-sdlc-op: "
 _FOOTER = re.compile(r"\s*(?:^[-*_]{3,}\s*)?^ae-sdlc-op:\s*([0-9a-f]{32})\s*\Z", re.MULTILINE)
-_COMMENT_MARKER = re.compile(r"\s*<!--\s*ae-sdlc-[^>]*-->\s*")
-_BLOCKER_MARKER = "<!-- ae-sdlc-blocker -->"
-_BLOCKER_PREFIX = "**Blocked:** "
 _ISSUE_KEY = re.compile(r"[A-Za-z][A-Za-z0-9]*-\d+")
 _PROJECT_KEY = re.compile(r"P-[A-Za-z0-9]+-\d+")
 _NOT_FOUND = re.compile(r"not found|could not find|does not exist", re.IGNORECASE)
@@ -38,10 +35,6 @@ _PROJECT_WRITE_STATE = {Status.DRAFT: "backlog", Status.READY: "planned", Status
 _PROJECT_READ_STATE = {"backlog": Status.DRAFT, "planned": Status.READY, "started": Status.IN_PROGRESS,
                        "in progress": Status.IN_PROGRESS, "paused": Status.BLOCKED, "completed": Status.DONE,
                        "canceled": CANCELED}
-
-
-def _op_key(raw: str) -> str:
-    return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
 def _with_footer(description: str, key: str | None) -> str:
@@ -58,16 +51,6 @@ def _ref(value: Any) -> str | None:
     if isinstance(value, dict):
         value = value.get("identifier") or value.get("id")
     return str(value) if value else None
-
-
-def _name(value: Any) -> str:
-    if isinstance(value, dict):
-        value = value.get("name") or value.get("displayName")
-    return str(value) if value else ""
-
-
-def _sort_key(item: WorkItem) -> list:
-    return [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", item.id)]
 
 
 def _not_found(exc: ToolFailed) -> bool:
@@ -137,9 +120,9 @@ class LinearWorkBackend:
         if not key or "description" not in row:
             raise InvalidResponse("Linear returned an issue without an identifier or description")
         status = row.get("status")
-        state = _name(status)
+        state = name_of(status)
         state_type = row.get("statusType") or (status.get("type") if isinstance(status, dict) else None)
-        labels = [_name(label) for label in row.get("labels") or []]
+        labels = [name_of(label) for label in row.get("labels") or []]
         description, op = _split_footer(row["description"] or "")
         return WorkItem(
             id=str(key), kind="spec", title=row.get("title"), description=description,
@@ -165,8 +148,8 @@ class LinearWorkBackend:
         )
 
     def _comment(self, row: dict, work_id: str) -> WorkComment:
-        return WorkComment(id=str(row.get("id")), work_item_id=work_id, author=_name(row.get("author")),
-                           body=_COMMENT_MARKER.sub("", row.get("body") or "").strip(),
+        return WorkComment(id=str(row.get("id")), work_item_id=work_id, author=name_of(row.get("author")),
+                           body=COMMENT_MARKER.sub("", row.get("body") or "").strip(),
                            created_at=str(row.get("createdAt") or ""), updated_at=row.get("updatedAt"))
 
     # --- reads ---
@@ -219,8 +202,8 @@ class LinearWorkBackend:
     def _latest_blocker(self, item: WorkItem) -> str | None:
         for row in reversed(self._comment_rows(item)):
             body = row.get("body") or ""
-            if _BLOCKER_MARKER in body:
-                return _COMMENT_MARKER.sub("", body).strip().removeprefix(_BLOCKER_PREFIX)
+            if BLOCKER_MARKER in body:
+                return COMMENT_MARKER.sub("", body).strip().removeprefix(BLOCKER_PREFIX)
         return None
 
     def get(self, work_id: str) -> WorkItem:
@@ -237,7 +220,7 @@ class LinearWorkBackend:
     def list_items(self) -> list[WorkItem]:
         """Return managed projects and issues. Dependencies stay empty: Linear's list omits relations."""
         issues = self._managed_issues() if self._label_exists(MARKER_LABEL) else []
-        return [self._with_blocker(item) for item in sorted([*self._managed_projects(), *issues], key=_sort_key)]
+        return [self._with_blocker(item) for item in sorted([*self._managed_projects(), *issues], key=sort_key)]
 
     def list_specs(self, scope: str, status: str | None = None) -> list[WorkItem]:
         try:
@@ -250,7 +233,7 @@ class LinearWorkBackend:
         listed = [self._issue_item(row) for row in self._pages("search_issues", arguments, "issues")]
         chosen = [i for i in listed if i.metadata["managed"] and (status is None or i.status == status)]
         # Dependencies decide eligibility, and only a single-issue read returns them.
-        return sorted((self.get(i.id) for i in chosen), key=_sort_key)
+        return sorted((self.get(i.id) for i in chosen), key=sort_key)
 
     def search(self, query: str, limit: int = 20) -> list[WorkItem]:
         """Find existing issues and projects by text, managed or not. Dependencies are not loaded."""
@@ -299,7 +282,7 @@ class LinearWorkBackend:
         if item.kind == "spec" and item.dependencies:
             self._require("create_dependencies")
         identity = idempotency_key or f"{item.kind}\0{item.parent_id}\0{item.title.strip().lower()}"
-        key = _op_key(identity)
+        key = op_key(identity)
         self._ensure_label(MARKER_LABEL)
         if item.kind == "spec" and item.status == Status.BLOCKED and self.mapping.uses_blocked_label:
             self._ensure_label(BLOCKED_LABEL)
@@ -383,7 +366,7 @@ class LinearWorkBackend:
         item = self._fetch(work_id)
         if dedupe_key is None:
             return self._comment(self._post_comment(item, text), item.id)
-        marker = f"<!-- ae-sdlc-op:{_op_key(dedupe_key)} -->"
+        marker = f"<!-- ae-sdlc-op:{op_key(dedupe_key)} -->"
         row = self._find_comment(item, marker)
         if row is None:
             try:
@@ -412,7 +395,7 @@ class LinearWorkBackend:
             raise InvalidTransition(f"{item.id} is {confirmed.status} after requesting {target_status}")
         if target_status == Status.BLOCKED:
             if blocker and self._latest_blocker(confirmed) != blocker:
-                self._post_comment(confirmed, f"{_BLOCKER_PREFIX}{blocker}\n\n{_BLOCKER_MARKER}")
+                self._post_comment(confirmed, f"{BLOCKER_PREFIX}{blocker}\n\n{BLOCKER_MARKER}")
             confirmed.blocker = blocker or self._latest_blocker(confirmed)
         return confirmed
 
