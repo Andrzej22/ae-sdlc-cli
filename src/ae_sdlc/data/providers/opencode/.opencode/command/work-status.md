@@ -18,7 +18,7 @@ or:
 ./ae-sdlc status --blocked
 ```
 
-This is a deterministic repository query. Do not implement code.
+This is a deterministic query of the active work backend. Do not implement code.
 
 ---
 

@@ -5,15 +5,17 @@ import argparse
 import json
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SCRIPTS = ROOT / "scripts" / "ae-sdlc"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
+from work import commands as work_commands
 from work.backend import WorkBackendError
 from work.config import backend_name, load_backend, read_config, set_backend
-from work.delegate import run_backend_command
+from work.delegate import run_backend_command, run_package_command
 from work.service import WorkService
 import providers
 import run_workflow
@@ -53,7 +55,25 @@ def run_backend(a: argparse.Namespace) -> int:
     return 0
 
 
+@contextmanager
+def local_service():
+    yield WorkService(load_backend(ROOT))
+
+
+def run_work(argv: list[str]) -> int:
+    """Parse here so usage errors and --help need no installed package; a remote backend gets the raw arguments."""
+    args = work_commands.parse(argv)
+    try:
+        if backend_name(ROOT) == "local":
+            return work_commands.execute(args, local_service)
+        return run_package_command(ROOT, Path(__file__), ["work", *argv])
+    except WorkBackendError as exc:
+        return work_commands.fail(exc)
+
+
 def main() -> int:
+    if sys.argv[1:2] == ["work"]:  # argparse's REMAINDER cannot start with an option such as --help
+        return run_work(sys.argv[2:])
     ap = argparse.ArgumentParser(description="Thin command-driven AE-SDLC")
     ap.add_argument("--provider", "-p", help="agent CLI to use (default: the only installed provider or $AE_SDLC_PROVIDER)")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -89,8 +109,14 @@ def main() -> int:
     backend.add_parser("show", help="print the active backend and its settings")
     backend.add_parser("doctor", help="verify the active backend with real calls")
 
+    p = sub.add_parser("work", add_help=False, help="work-management commands for skills and runners (JSON)")
+    p.add_argument("argv", nargs=argparse.REMAINDER)
+
     a = ap.parse_args()
     schemas = ROOT / ".ae-sdlc" / "schemas"
+
+    if a.cmd == "work":
+        return run_work(a.argv)
 
     if a.cmd == "backend":
         try:
@@ -120,11 +146,15 @@ def main() -> int:
         return run_workflow.main(argv)
 
     if a.cmd == "status":
+        only = "READY" if a.ready else "BLOCKED" if a.blocked else None
         try:
+            if backend_name(ROOT) != "local":
+                scope_args = [a.scope] if a.scope else []
+                return run_package_command(ROOT, Path(__file__), ["status", *scope_args,
+                                                                  *(["--status", only] if only else [])])
             service = WorkService(load_backend(ROOT))
         except WorkBackendError as exc:
             raise SystemExit(str(exc))
-        only = "READY" if a.ready else "BLOCKED" if a.blocked else None
         for line in service.status_lines(a.scope, only_status=only):
             print(line)
         return 0

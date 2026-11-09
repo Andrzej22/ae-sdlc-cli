@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .backend import WorkBackend, WorkItemNotFound
+from .backend import InvalidInput, InvalidTransition, WorkBackend, WorkItemNotFound
 from .models import RunOutcome, Status, WorkComment, WorkItem
 
 _STATUS_ORDER = [Status.DRAFT, Status.READY, Status.IN_PROGRESS, Status.BLOCKED, Status.DONE]
@@ -15,6 +15,7 @@ class ExecutionContext:
     parent: WorkItem | None
     dependencies: list[WorkItem] = field(default_factory=list)
     comments: list[WorkComment] = field(default_factory=list)
+    related: list[WorkItem] = field(default_factory=list)
 
 
 @dataclass
@@ -44,6 +45,7 @@ class WorkService:
             parent=self.backend.get(item.parent_id) if item.parent_id else None,
             dependencies=self.backend.get_dependencies(work_id),
             comments=self.backend.get_comments(work_id, comment_limit),
+            related=self.backend.get_related(work_id),
         )
 
     def start_execution(self, work_id: str) -> WorkItem:
@@ -60,6 +62,62 @@ class WorkService:
         reason = "; ".join(result.get("blockers") or []) or result.get("summary") or default
         self.backend.transition(work_id, Status.BLOCKED, blocker=reason)
         return FinishedExecution("blocked" if needs_decision else "failed", reason)
+
+    def list_scope(self, scope: str, status: str | None = None, eligible: bool = False) -> list[WorkItem]:
+        """Like list_specs, but a mistyped scope is an error rather than an empty result."""
+        self.backend.get(scope)
+        if eligible:
+            return self.eligible_specs(scope, status or Status.READY)
+        return self.backend.list_specs(scope, status=status)
+
+    def begin_execution(self, work_id: str, comment_limit: int | None = None) -> tuple[ExecutionContext, bool]:
+        """Validate a spec, move it to IN_PROGRESS and return (context, resumed).
+
+        A spec already IN_PROGRESS is returned with resumed=True, so that a call whose response was
+        lost can be repeated. Reading first means a failed read leaves the status untouched.
+        """
+        context = self.prepare_execution_context(work_id, comment_limit)
+        item = context.item
+        if item.kind != "spec":
+            raise InvalidTransition(f"{item.id} is an {item.kind}; only a spec can be started")
+        if item.status == Status.IN_PROGRESS:
+            return context, True
+        if item.status != Status.READY:
+            detail = f": {item.blocker}" if item.blocker else ""
+            raise InvalidTransition(f"{item.id} is {item.status}, not READY{detail}")
+        done = {d.id for d in context.dependencies if d.status == Status.DONE}
+        unmet = [d for d in item.dependencies if d not in done]
+        if unmet:
+            raise InvalidTransition(f"{item.id} is waiting for dependencies that are not DONE: {', '.join(unmet)}")
+        context.item = self.start_execution(item.id)
+        return context, False
+
+    def complete_execution(self, work_id: str, result: dict) -> tuple[WorkItem, FinishedExecution, bool]:
+        """Apply a reported result to a started spec and return (item, finished, repeated).
+
+        A spec already in the status this result leads to is left alone, so a retry is safe.
+        """
+        if not isinstance(result, dict):
+            raise InvalidInput("the result must be a JSON object")
+        outcome = result.get("status")
+        if outcome not in set(RunOutcome):
+            raise InvalidInput(f"result status must be one of {', '.join(RunOutcome)}")
+        blockers = result.get("blockers", [])
+        if not isinstance(blockers, list) or not all(isinstance(b, str) for b in blockers):
+            raise InvalidInput("result blockers must be a list of strings")
+        if not isinstance(result.get("summary", ""), str):
+            raise InvalidInput("result summary must be a string")
+
+        item = self.backend.get(work_id)
+        target = Status.DONE if outcome == RunOutcome.COMPLETED else Status.BLOCKED
+        if item.status == target:
+            needs_decision = outcome in {RunOutcome.BLOCKED, RunOutcome.NEEDS_INPUT}
+            disposition = "completed" if target == Status.DONE else "blocked" if needs_decision else "failed"
+            return item, FinishedExecution(disposition, result.get("summary", "")), True
+        if item.status != Status.IN_PROGRESS:
+            raise InvalidTransition(f"{item.id} is {item.status}; only an IN_PROGRESS spec can be finished")
+        finished = self.finish_execution(item.id, 0, result, fallback_reason=f"agent reported {outcome}")
+        return self.backend.get(item.id), finished, False
 
     def _items_in_scope(self, scope: str | None) -> list[WorkItem]:
         if not scope:

@@ -7,31 +7,52 @@ from .models import WorkComment, WorkItem
 
 
 class WorkBackendError(Exception):
-    """Base class for every expected work-management failure."""
+    """Base class for every expected work-management failure.
+
+    `code` and `exit_code` are the stable contract of the `./ae-sdlc work` commands.
+    """
+
+    code = "backend_error"
+    exit_code = 1
 
 
 class WorkConfigError(WorkBackendError):
     """.ae-sdlc/work.toml is unreadable or selects an unavailable backend."""
 
+    code = "configuration"
+    exit_code = 6
+
+
+class InvalidInput(WorkBackendError):
+    """A command received a payload it cannot use. Nothing was changed."""
+
+    code = "invalid_input"
+    exit_code = 2
+
 
 class WorkItemNotFound(WorkBackendError):
-    pass
+    code = "not_found"
+    exit_code = 3
 
 
 class WorkItemExists(WorkBackendError):
-    pass
+    code = "conflict"
+    exit_code = 4
 
 
 class InvalidTransition(WorkBackendError):
-    pass
+    code = "invalid_transition"
+    exit_code = 5
 
 
 class RevisionConflict(WorkBackendError):
-    pass
+    code = "conflict"
+    exit_code = 4
 
 
 class CapabilityMissing(WorkBackendError):
-    pass
+    code = "capability_missing"
+    exit_code = 6
 
 
 @runtime_checkable
@@ -51,8 +72,14 @@ class WorkBackend(Protocol):
     def update(self, item: WorkItem, expected_revision: str | None = None) -> WorkItem:
         """Replace title, description, parent and dependencies. Status changes use transition."""
 
+    def search(self, query: str, limit: int = 20) -> list[WorkItem]:
+        """Find existing work by text. Dependencies need not be loaded."""
+
     def get_dependencies(self, work_id: str) -> list[WorkItem]:
         """Return the dependencies that exist; a dangling reference is omitted."""
+
+    def get_related(self, work_id: str) -> list[WorkItem]:
+        """Return the linked items that exist."""
 
     def get_comments(self, work_id: str, limit: int | None = None) -> list[WorkComment]:
         ...

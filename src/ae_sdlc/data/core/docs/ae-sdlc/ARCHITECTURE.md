@@ -21,6 +21,6 @@ Product decomposition and implementation execution are separate concerns. An epi
 
 ## Runtime budget principle
 
-Harness-specific tool calls inside `execute-work` should normally be zero.
+Harness-specific tool calls inside `execute-work` should normally be one `./ae-sdlc work start` and one `./ae-sdlc work finish` per spec.
 
-The model may use ordinary repository read/search/edit commands needed to implement the feature, but it should not call harness bookkeeping scripts.
+The model may use ordinary repository read/search/edit commands needed to implement the feature, but it should not call any other harness script.

@@ -14,8 +14,8 @@ PREPARE_TAIL = (
     "and return NEEDS_INPUT; do not invent an answer."
 )
 EXECUTE_TAIL = (
-    "Thin execution mode. Do not call harness helper scripts or start "
-    "quality/review/verification phases."
+    "Thin execution mode. Do not call harness helper scripts other than the "
+    "./ae-sdlc work commands the skill names, or start quality/review/verification phases."
 )
 BACKGROUND_TAIL = (
     "Background workflow constraints:\n"

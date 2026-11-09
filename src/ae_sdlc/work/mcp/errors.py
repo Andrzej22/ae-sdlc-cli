@@ -17,18 +17,28 @@ class McpFailure(WorkBackendError):
 
 
 class CredentialsMissing(McpFailure):
-    pass
+    code = "authentication"
+    exit_code = 7
 
 
 class AuthRejected(McpFailure):
     """The server did not accept the credential."""
 
+    code = "authentication"
+    exit_code = 7
+
 
 class PermissionDenied(McpFailure):
     """The credential is valid but may not do this."""
 
+    code = "permission_denied"
+    exit_code = 7
+
 
 class RateLimited(McpFailure):
+    code = "rate_limited"
+    exit_code = 8
+
     def __init__(self, message: str, retry_after: float | None = None):
         super().__init__(message)
         self.retry_after = retry_after
@@ -36,6 +46,9 @@ class RateLimited(McpFailure):
 
 class TransportFailure(McpFailure):
     """Network failure, timeout or server-side error. The request may or may not have been applied."""
+
+    code = "unavailable"
+    exit_code = 8
 
 
 class ToolFailed(McpFailure):

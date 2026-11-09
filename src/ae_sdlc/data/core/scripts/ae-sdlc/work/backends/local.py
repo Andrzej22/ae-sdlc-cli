@@ -39,10 +39,15 @@ class LocalWorkBackend:
         self.store = store
 
     def _record(self, work_id: str) -> Record:
-        rec = self.store.get(work_id)
+        rec = self.store.get(work_id) or self._record_at(work_id)
         if rec is None:
             raise WorkItemNotFound(f"unknown work item: {work_id}")
         return rec
+
+    def _record_at(self, reference: str) -> Record | None:
+        """Interactive commands also accept a spec's path."""
+        target = (self.store.root / reference).resolve()
+        return next((r for r in self.store.records if r.path.resolve() == target), None)
 
     def get(self, work_id: str) -> WorkItem:
         return _to_item(self._record(work_id))
@@ -52,6 +57,24 @@ class LocalWorkBackend:
 
     def list_specs(self, scope: str, status: str | None = None) -> list[WorkItem]:
         return [_to_item(r) for r in self.store.specs_for_scope(scope, status=status)]
+
+    def search(self, query: str, limit: int = 20) -> list[WorkItem]:
+        needle = query.lower()
+        found = [r for r in self.store.records
+                 if needle in r.id.lower() or needle in str(r.meta.get("title") or "").lower() or needle in r.body.lower()]
+        return [_to_item(r) for r in found[:limit]]
+
+    def _next_id(self, kind: str) -> str:
+        prefix = "EPIC" if kind == "epic" else "SPEC"
+        used = [int(m[1]) for r in self.store.records if (m := re.fullmatch(rf"{prefix}-(\d+)", r.id))]
+        return f"{prefix}-{max(used, default=0) + 1:03d}"
+
+    def _same_work(self, item: WorkItem) -> WorkItem | None:
+        for known in self.list_items():
+            if (known.kind, known.parent_id, (known.title or "").strip().lower()) == (
+                    item.kind, item.parent_id, (item.title or "").strip().lower()):
+                return known
+        return None
 
     def _new_path(self, item: WorkItem) -> Path:
         name = "-".join(p for p in (item.id, _slug(item.title)) if p)
@@ -63,13 +86,22 @@ class LocalWorkBackend:
         return product / "standalone" / f"{name}.md"
 
     def create(self, item: WorkItem, idempotency_key: str | None = None) -> WorkItem:
-        # The artifact id is already a stable key, so a retry is rejected instead of duplicated.
-        if self.store.get(item.id):
+        """Create the item. An explicit id is a stable key, so a retry is rejected instead of duplicated.
+
+        Without an id one is allocated, and as on the remote backends the same title under the same
+        parent counts as the same work: it is returned with metadata["reused"] set.
+        """
+        if item.id and self.store.get(item.id):
             raise WorkItemExists(f"work item already exists: {item.id}")
         if item.kind not in {"epic", "spec"}:
             raise ValueError(f"invalid kind: {item.kind}")
         if item.status not in set(Status):
             raise InvalidTransition(f"invalid status: {item.status}")
+        if not item.id:
+            if existing := self._same_work(item):
+                existing.metadata["reused"] = True
+                return existing
+            item.id = self._next_id(item.kind)
         path = self._new_path(item)
         meta = {
             "artifact_type": item.kind,
@@ -100,6 +132,10 @@ class LocalWorkBackend:
     def get_dependencies(self, work_id: str) -> list[WorkItem]:
         known = (self.store.get(d) for d in self.get(work_id).dependencies)
         return [_to_item(r) for r in known if r]
+
+    def get_related(self, work_id: str) -> list[WorkItem]:
+        self._record(work_id)
+        return []  # the Markdown format has no relation other than dependencies
 
     def get_comments(self, work_id: str, limit: int | None = None) -> list[WorkComment]:
         self._record(work_id)

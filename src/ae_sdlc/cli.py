@@ -64,7 +64,12 @@ def cmd_init(args: argparse.Namespace) -> int:
 def cmd_work(args: argparse.Namespace) -> int:
     from . import backend_cli  # imported here so `init` does not load the MCP SDK
 
-    return backend_cli.run(Path(args.root).resolve(), args.action, args.provider)
+    root = Path(args.root).resolve()
+    if args.area == "work":
+        return backend_cli.run_work(root, args.argv)
+    if args.area == "status":
+        return backend_cli.run_status(root, args.scope, args.status)
+    return backend_cli.run(root, args.action, args.provider)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -81,10 +86,16 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("_work", help=argparse.SUPPRESS)  # internal: called by the generated ./ae-sdlc
     p.add_argument("--root", required=True)
-    p.add_argument("area", choices=["backend"])
-    p.add_argument("action", choices=["connect", "doctor", "use"])
-    p.add_argument("provider", choices=["linear", "jira"])
     p.set_defaults(func=cmd_work)
+    areas = p.add_subparsers(dest="area", required=True)
+    area = areas.add_parser("backend")
+    area.add_argument("action", choices=["connect", "doctor", "use"])
+    area.add_argument("provider", choices=["linear", "jira"])
+    area = areas.add_parser("status")
+    area.add_argument("scope", nargs="?")
+    area.add_argument("--status", choices=["READY", "BLOCKED"])
+    area = areas.add_parser("work", add_help=False)
+    area.add_argument("argv", nargs=argparse.REMAINDER)
 
     args = ap.parse_args(argv)
     return args.func(args)

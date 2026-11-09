@@ -454,3 +454,20 @@ def test_provider_env_scrub_removes_only_tracker_credentials(project, monkeypatc
     import os
     assert "LINEAR_API_KEY" not in os.environ and "ATLASSIAN_API_TOKEN" not in os.environ
     assert os.environ["KEEP_ME"] == "z"
+
+
+def test_a_connection_that_never_answers_fails_within_the_timeout():
+    import asyncio
+    from types import SimpleNamespace
+
+    from ae_sdlc.work.mcp.client import McpClient
+    from ae_sdlc.work.mcp.errors import TransportFailure
+
+    class Stalled(McpClient):
+        async def _serve(self, ready):
+            await asyncio.Event().wait()
+
+    client = Stalled("https://mcp.example.test/mcp", SimpleNamespace(authorization="x", secrets=[]), timeout=0.05,
+                     retries=0)
+    with pytest.raises(TransportFailure, match="no response within"):
+        client._ensure_connected()

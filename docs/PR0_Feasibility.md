@@ -220,7 +220,7 @@ Minimum changes required **before** remote backends: (1) models + Protocol + loc
 | D1 | Decided 2026-11-09: no transition table for the local backend; `set_status` stays permissive (Q1). PR 1's "reject invalid status transitions" test covers only unknown status values | — | — |
 | D2 | Decided 2026-11-09: `FAILED` and other non-completed outcomes keep becoming `BLOCKED` in the local runner (Q2). This differs from PR 6's "do not misclassify failure as a product blocker", so PR 6 must revisit it explicitly rather than change it silently | — | PR 6 |
 | D3 | Decided 2026-11-09: `mcp` is a required dependency of the `ae_sdlc` package, added in PR 2 | — | PR 2 |
-| D4 | Decided 2026-11-09: PR 5 must allow network calls made by `./ae-sdlc work` from every provider's agent sandbox, and remove the restrictions that block them. Scope is limited to that command (plan constraint 12) | — | PR 5 |
+| D4 | Decided 2026-11-09: PR 5 must allow network calls made by `./ae-sdlc work` from every provider's agent sandbox, and remove the restrictions that block them. Scope is limited to that command (plan constraint 12). Revised 2026-11-09 during PR 5: no per-command or per-host network limit is imposed; Codex and Cursor sandboxes allow all hosts, filesystem isolation stays | — | PR 5 |
 
 ### Runbook to clear B1 (about 10 minutes)
 

@@ -28,7 +28,7 @@ no application code) override anything the supporting skills suggest.
 
 ## Procedure
 
-1. Search `docs/product/` directly for matching IDs/titles before creating anything.
+1. Find existing work once, before creating anything: `./ae-sdlc work lookup "<keywords>"`, and `./ae-sdlc work get <ID>` for an item named in the request.
 2. Separate confirmed requirements, constraints, assumptions, risks, dependencies, non-goals, and blocking questions.
 3. Ask only questions whose answer materially changes behavior, permissions/security, data handling, compatibility, destructive behavior, or scope.
 4. In non-interactive mode, never invent a blocking decision. Persist the question and return `NEEDS_INPUT`.
@@ -40,40 +40,32 @@ no application code) override anything the supporting skills suggest.
 7. For any feature touching an entity, design the client-facing API (see "Client API Design Rule" in AGENTS.md): CRUD completeness, access management, role/permissions in responses, list filtering/pagination, error codes. Record it in the spec's "API Surface" section and list deferred endpoints explicitly.
 8. Write observable acceptance criteria and relevant negative/boundary behavior.
 9. Mark a spec `READY` only when implementation can proceed without inventing material product behavior.
-10. Persist artifacts by editing/creating markdown files directly. Do not call harness helper scripts to do bookkeeping.
-11. Stop before application-code implementation.
+10. Write the content as JSON to `.ae-sdlc-runtime/publish.json` (format below) and run `./ae-sdlc work publish --json-file .ae-sdlc-runtime/publish.json`. It works the same on every backend. Do not write epic/spec files under `docs/product/` yourself.
+11. Use the IDs and URLs the command returns; never invent an ID. On a non-zero exit, nothing is confirmed except what `partial` lists: fix the cause and publish the same document again, which does not duplicate work.
+12. Stop before application-code implementation.
 
-## ID conventions
+## Publish format
 
-Use repository-local sequential IDs:
-
-```text
-EPIC-001
-SPEC-001
+```json
+{
+  "epic": {"title": "...", "description": "<Markdown>", "status": "READY"},
+  "specs": [
+    {"ref": "api", "title": "...", "description": "<Markdown>", "status": "READY"},
+    {"ref": "ui", "title": "...", "description": "<Markdown>", "status": "DRAFT", "depends_on": ["api", "ENG-12"]}
+  ],
+  "blocking_questions": ["..."]
+}
 ```
 
-Scan existing product artifacts once and choose the next unused ID.
-
-## Typical broad feature
-
-```text
-docs/product/epics/EPIC-001-feature-name/
-├── epic.md
-└── spec.md
-```
-
-If multiple specs are truly necessary:
-
-```text
-docs/product/epics/EPIC-001-feature-name/
-├── epic.md
-└── specs/
-    ├── SPEC-001-first-slice.md
-    └── SPEC-002-second-slice.md
-```
+- `epic` is optional; `{"epic": {"id": "ENG-1"}}` adds the specs to an existing epic.
+- `description` is the complete document, following the sections of `docs/product/_templates/spec.md` or `epic.md`, without the frontmatter. Record blocking questions in its "Blocking Questions" section.
+- `status` is `DRAFT` or `READY`, default `DRAFT`. While `blocking_questions` is non-empty, the command stores `READY` as `DRAFT`.
+- `depends_on` holds the `ref` of an earlier spec in this document, or the ID of existing work.
+- To change existing work, give its `id` and only the fields that change. An item returned with `"reused": true` already existed and was left unchanged.
+- IDs are assigned by the active backend (`SPEC-001` locally, the provider's key remotely).
 
 ## Final response
 
-Report created/updated artifact paths, ready spec IDs, and any blocking questions.
+Report the IDs and URLs returned by the publish command, ready spec IDs, and any blocking questions.
 
 When an output schema is supplied, satisfy it exactly.

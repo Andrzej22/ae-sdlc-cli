@@ -1,5 +1,9 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(./ae-sdlc work:*)",
+      "Bash(./ae-sdlc status:*)"
+    ],
     "deny": [
       "Read(./.env)",
       "Read(**/.env)",
@@ -26,5 +30,13 @@
       "Bash(kubectl replace:*)",
       "Bash(kubectl patch:*)"
     ]
+  },
+  "sandbox": {
+    "network": {
+      "allowedDomains": [
+        "mcp.linear.app",
+        "mcp.atlassian.com"
+      ]
+    }
   }
 }

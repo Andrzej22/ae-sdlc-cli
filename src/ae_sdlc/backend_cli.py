@@ -4,19 +4,26 @@ from __future__ import annotations
 import getpass
 import json
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .work import commands
 from .work.backend import WorkBackendError, WorkConfigError
-from .work.config import read_config, set_backend, write_config
+from .work.config import backend_name, load_backend, read_config, set_backend, write_config
+from .work.jira import JiraWorkBackend
 from .work.jira_status import BLOCKED_LABEL, propose_mapping
+from .work.linear import LinearWorkBackend
 from .work.mcp import auth
 from .work.mcp.capabilities import invoke, operation
 from .work.mcp.client import McpClient, provider_endpoint
 from .work.mcp.doctor import healthy, rows, run_doctor
 from .work.mcp.errors import CredentialsMissing, InvalidResponse
+from .work.service import WorkService
 
+_REMOTE_BACKENDS = {"linear": LinearWorkBackend, "jira": JiraWorkBackend}
 _JIRA_REQUIRED = ("status_draft", "status_ready", "status_in_progress", "status_done")
 
 
@@ -149,6 +156,34 @@ def use(root: Path, provider: str) -> int:
         return 1
     set_backend(root, provider)
     print(f"Active backend: {provider}")
+    return 0
+
+
+@contextmanager
+def open_service(root: Path) -> Iterator[WorkService]:
+    """Yield a service over the active backend, holding one MCP connection for a remote one."""
+    name = backend_name(root)
+    if name not in _REMOTE_BACKENDS:
+        yield WorkService(load_backend(root))  # local, or the error naming an unknown backend
+        return
+    with McpClient(provider_endpoint(name), auth.resolve(name)) as client:
+        yield WorkService(_REMOTE_BACKENDS[name](client, _settings(root, name)))
+
+
+def run_work(root: Path, argv: list[str]) -> int:
+    _warn_on_version_skew(root)
+    return commands.execute(commands.parse(argv), lambda: open_service(root))
+
+
+def run_status(root: Path, scope: str | None, only_status: str | None) -> int:
+    _warn_on_version_skew(root)
+    try:
+        with open_service(root) as service:
+            lines = service.status_lines(scope, only_status=only_status)
+    except WorkBackendError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return exc.exit_code
+    print("\n".join(lines))
     return 0
 
 

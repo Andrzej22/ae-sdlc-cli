@@ -176,7 +176,14 @@ class McpClient:
         self._jobs = asyncio.Queue()
         ready = asyncio.get_running_loop().create_future()
         self._owner = asyncio.create_task(self._serve(ready))
-        await ready
+        # A sandbox can make a connection attempt stall below every httpx timeout.
+        done, _ = await asyncio.wait({ready}, timeout=self._timeout)
+        if not done:
+            self._owner.cancel()
+            await asyncio.wait({self._owner}, timeout=5)
+            host = urlsplit(self.url).hostname
+            raise TransportFailure(f"cannot reach {host}: no response within {self._timeout:g}s")
+        ready.result()
 
     async def _stop(self) -> None:
         if self._owner is not None and not self._owner.done():

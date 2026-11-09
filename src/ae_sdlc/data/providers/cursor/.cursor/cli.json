@@ -1,5 +1,9 @@
 {
   "permissions": {
+    "allow": [
+      "Shell(./ae-sdlc work:*)",
+      "Shell(./ae-sdlc status:*)"
+    ],
     "deny": [
       "Read(.env)",
       "Read(**/.env)",
@@ -22,9 +26,7 @@
       "Shell(kubectl apply:*)",
       "Shell(kubectl delete:*)",
       "Shell(kubectl replace:*)",
-      "Shell(kubectl patch:*)",
-      "WebFetch(*)",
-      "WebSearch(*)"
+      "Shell(kubectl patch:*)"
     ]
   }
 }
