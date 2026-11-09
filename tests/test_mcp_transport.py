@@ -284,7 +284,23 @@ def linear_tools(issues=True):
         raise AssertionError("the doctor must not write")
 
     def list_issue_statuses(team: str) -> str:
-        return json.dumps([{"name": "Todo"}, {"name": "Done"}])
+        return json.dumps([{"name": "Backlog", "type": "backlog"}, {"name": "Todo", "type": "unstarted"},
+                           {"name": "Doing", "type": "started"}, {"name": "Done", "type": "completed"}])
+
+    def get_project(query: str) -> str:
+        return json.dumps({"id": query})
+
+    def list_projects(team: str) -> str:
+        return json.dumps({"projects": []})
+
+    def get_team(query: str) -> str:
+        return json.dumps({"id": query})
+
+    def list_issue_labels(team: str) -> str:
+        return json.dumps({"labels": []})
+
+    def save_issue_label() -> str:
+        raise AssertionError("the doctor must not write")
 
     def list_comments(issueId: str, limit: int = 1) -> str:
         return json.dumps({"comments": []})
@@ -296,7 +312,8 @@ def linear_tools(issues=True):
         return json.dumps({"teams": [{"id": "t", "name": "Core"}]})
 
     return {f.__name__: f for f in (get_issue, list_issues, save_issue, save_comment, list_issue_statuses,
-                                    list_comments, get_user, list_teams)}
+                                    list_comments, get_user, list_teams, get_project, list_projects, get_team,
+                                    list_issue_labels, save_issue_label)}
 
 
 def linear_env(url, tmp_path, key=SECRET):

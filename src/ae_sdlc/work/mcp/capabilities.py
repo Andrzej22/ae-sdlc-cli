@@ -35,6 +35,11 @@ _OPERATIONS = {
         Operation("read_dependencies", "get_issue"),
         Operation("create_dependencies", "save_issue", required=False),
         Operation("create_epic", "save_project", required=False),
+        Operation("read_epic", "get_project"),
+        Operation("list_epics", "list_projects"),
+        Operation("read_team", "get_team"),
+        Operation("list_labels", "list_issue_labels"),
+        Operation("create_label", "save_issue_label"),
     ],
     "jira": [
         Operation("read_issue", "getJiraIssue"),

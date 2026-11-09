@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..backend import WorkBackendError
+from ..linear_status import build_status_mapping
 from . import auth
 from .capabilities import discover_catalog, invoke, is_available, operation, operations
 from .client import McpClient, provider_endpoint
@@ -59,7 +60,7 @@ class _Probe:
     def run(self, name: str, call: Callable[[], Any], detail: Callable[[Any], str] = lambda _: "") -> Any:
         try:
             result = call()
-        except McpFailure as exc:
+        except WorkBackendError as exc:
             self.checks.append(_failure_check(name, exc))
             return None
         self.checks.append(Check(name, OK, detail(result)))
@@ -79,8 +80,9 @@ def _probe_linear(client: McpClient, settings: Mapping[str, str], probe: _Probe)
     def read(tool: str, **arguments: Any) -> Any:
         return client.call(tool, arguments, retry_safe=True).data
     probe.run("live: credential identity", lambda: read("get_user", query="me"))
-    probe.run("live: status mapping", lambda: read("list_issue_statuses", team=team),
-              lambda data: f"team statuses: {_names(data, 'statuses', 'nodes')}")
+    probe.run("live: status mapping",
+              lambda: build_status_mapping(rows(read("list_issue_statuses", team=team), "statuses", "nodes"), settings),
+              lambda mapping: mapping.describe())
     listed = probe.run("live: project access", lambda: read("list_issues", team=team, limit=1))
     if listed is None:
         probe.skip("live: comments", "live: relationships", reason="project access failed")
