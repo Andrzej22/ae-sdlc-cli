@@ -15,3 +15,7 @@ ae-sdlc = "ae_sdlc.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ae_sdlc"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
