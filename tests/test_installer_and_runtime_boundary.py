@@ -122,8 +122,8 @@ def test_generated_runtime_is_stdlib_only():
     assert bad == []
 
 
-def test_generated_runtime_has_no_link_back_to_installed_package(project):
-    """Today there is no mechanism for ./ae-sdlc to find the installed ae_sdlc package (PR 0 finding)."""
+def test_generated_runtime_reaches_installed_package_only_through_its_cli(project):
+    """./ae-sdlc delegates by running the `ae-sdlc` command; it must never import the ae_sdlc package."""
     text = "".join(p.read_text() for p in project.joinpath("scripts").rglob("*.py")) + \
            (project / "ae-sdlc").read_text()
     assert "ae_sdlc" not in text

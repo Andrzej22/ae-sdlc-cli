@@ -27,6 +27,12 @@ BACKGROUND_TAIL = (
 )
 
 
+def remove_tracker_credentials_from_env() -> None:
+    """Agent subprocesses inherit this environment and must not receive tracker credentials."""
+    for name in [n for n in os.environ if n.startswith(("LINEAR_", "ATLASSIAN_"))]:
+        del os.environ[name]
+
+
 def installed() -> list[str]:
     try:
         return list(json.loads(MANIFEST.read_text(encoding="utf-8")).get("providers", []))

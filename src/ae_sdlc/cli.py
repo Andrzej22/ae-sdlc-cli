@@ -61,6 +61,12 @@ def cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_work(args: argparse.Namespace) -> int:
+    from . import backend_cli  # imported here so `init` does not load the MCP SDK
+
+    return backend_cli.run(Path(args.root).resolve(), args.action, args.provider)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="ae-sdlc", description="Thin command-driven AE-SDLC harness installer")
     ap.add_argument("--version", action="version", version=f"ae-sdlc {__version__}")
@@ -72,6 +78,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true", help="show what would change without writing")
     p.add_argument("--verbose", "-v", action="store_true", help="list created files")
     p.set_defaults(func=cmd_init)
+
+    p = sub.add_parser("_work", help=argparse.SUPPRESS)  # internal: called by the generated ./ae-sdlc
+    p.add_argument("--root", required=True)
+    p.add_argument("area", choices=["backend"])
+    p.add_argument("action", choices=["connect", "doctor", "use"])
+    p.add_argument("provider", choices=["linear", "jira"])
+    p.set_defaults(func=cmd_work)
 
     args = ap.parse_args(argv)
     return args.func(args)

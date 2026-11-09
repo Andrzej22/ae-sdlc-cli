@@ -12,7 +12,8 @@ SCRIPTS = ROOT / "scripts" / "ae-sdlc"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 from work.backend import WorkBackendError
-from work.config import load_backend
+from work.config import backend_name, load_backend, read_config, set_backend
+from work.delegate import run_backend_command
 from work.service import WorkService
 import providers
 import run_workflow
@@ -28,6 +29,28 @@ def run_agent(provider: str | None, skill: str, args: str, tail: str, schema: Pa
         print("no structured result produced", file=sys.stderr)
         rc = rc or 1
     return rc
+
+
+def run_backend(a: argparse.Namespace) -> int:
+    active = backend_name(ROOT)
+    if a.backend_cmd == "connect":
+        return run_backend_command(ROOT, Path(__file__), "connect", a.provider)
+    if a.backend_cmd == "use" and a.name != "local":
+        return run_backend_command(ROOT, Path(__file__), "use", a.name)
+    if a.backend_cmd == "use":
+        set_backend(ROOT, "local")
+        print("Active backend: local")
+        return 0
+    if a.backend_cmd == "doctor":
+        if active != "local":
+            return run_backend_command(ROOT, Path(__file__), "doctor", active)
+        print("OK       local backend — no credentials or network required")
+        return 0
+    print(f"Active backend: {active}")
+    for table, values in read_config(ROOT).items():
+        if table != "work" and isinstance(values, dict):
+            print(f"[{table}] " + ", ".join(f"{k}={v}" for k, v in values.items()))
+    return 0
 
 
 def main() -> int:
@@ -57,8 +80,26 @@ def main() -> int:
 
     sub.add_parser("validate")
 
+    p = sub.add_parser("backend", help="select and verify where work is stored")
+    backend = p.add_subparsers(dest="backend_cmd", required=True)
+    b = backend.add_parser("connect", help="store credentials and choose the team or project")
+    b.add_argument("provider", choices=["linear", "jira"])
+    b = backend.add_parser("use", help="activate a backend")
+    b.add_argument("name", choices=["local", "linear", "jira"])
+    backend.add_parser("show", help="print the active backend and its settings")
+    backend.add_parser("doctor", help="verify the active backend with real calls")
+
     a = ap.parse_args()
     schemas = ROOT / ".ae-sdlc" / "schemas"
+
+    if a.cmd == "backend":
+        try:
+            return run_backend(a)
+        except WorkBackendError as exc:
+            raise SystemExit(str(exc))
+
+    if a.cmd in {"prepare-work", "execute-work", "workflow"}:
+        providers.remove_tracker_credentials_from_env()
 
     if a.cmd == "prepare-work":
         return run_agent(a.provider, "prepare-work", " ".join(a.request), providers.PREPARE_TAIL,
