@@ -11,7 +11,9 @@ ROOT = Path(__file__).resolve().parent
 SCRIPTS = ROOT / "scripts" / "ae-sdlc"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
-from work_store import WorkStore
+from work.backend import WorkBackendError
+from work.config import load_backend
+from work.service import WorkService
 import providers
 import run_workflow
 
@@ -77,9 +79,12 @@ def main() -> int:
         return run_workflow.main(argv)
 
     if a.cmd == "status":
-        store = WorkStore()
+        try:
+            service = WorkService(load_backend(ROOT))
+        except WorkBackendError as exc:
+            raise SystemExit(str(exc))
         only = "READY" if a.ready else "BLOCKED" if a.blocked else None
-        for line in store.summary_lines(a.scope, only_status=only):
+        for line in service.status_lines(a.scope, only_status=only):
             print(line)
         return 0
 

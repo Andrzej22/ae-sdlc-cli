@@ -17,7 +17,6 @@ def runner(project, load_store, monkeypatch):
     monkeypatch.setattr(run_workflow, "ROOT", project)
     monkeypatch.setattr(run_workflow, "RUNTIME", project / ".ae-sdlc-runtime" / "runs")
     monkeypatch.setattr(run_workflow, "SCHEMA", project / ".ae-sdlc" / "schemas" / "execute-result.schema.json")
-    monkeypatch.setattr(run_workflow, "WorkStore", lambda: load_store.WorkStore(project))
     calls: list[str] = []
     script: dict[str, tuple[int, dict | None]] = {}
 

@@ -108,7 +108,7 @@ def test_generated_runtime_is_stdlib_only():
     core = installer.DATA / "core"
     files = [core / "ae-sdlc", *core.joinpath("scripts").rglob("*.py"),
              *installer.DATA.joinpath("providers").rglob("providers/*.py")]
-    local = {"work_store", "providers", "run_workflow", "validate_harness", "claude", "codex",
+    local = {"work", "work_store", "providers", "run_workflow", "validate_harness", "claude", "codex",
              "cursor", "opencode", "agy"}
     bad = []
     for f in files:

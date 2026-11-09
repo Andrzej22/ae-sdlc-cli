@@ -46,7 +46,8 @@ def load_store(project, monkeypatch):
     """Import the installed work_store/run_workflow modules fresh, bound to the temp project."""
     scripts = str(project / "scripts" / "ae-sdlc")
     monkeypatch.syspath_prepend(scripts)
-    for m in ("work_store", "run_workflow", "providers"):
-        sys.modules.pop(m, None)
+    for m in list(sys.modules):
+        if m in ("work_store", "run_workflow", "providers", "work") or m.startswith("work."):
+            sys.modules.pop(m, None)
     import work_store  # noqa: WPS433
     return work_store
