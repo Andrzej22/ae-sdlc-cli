@@ -19,6 +19,7 @@ from typing import Any, ContextManager, NoReturn
 
 from .backend import InvalidInput, WorkBackendError
 from .models import WorkItem
+from .pending import runner_lock
 from .publish import publish
 from .service import WorkService
 
@@ -75,6 +76,10 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("id")
     p.add_argument("--dedupe-key", help="a repeat with the same key adds nothing")
     _input_options(p, "text")
+
+    p = sub.add_parser("recover", help="finish tracker updates a run still owes, without running an agent")
+    p.add_argument("id", nargs="?")
+    p.add_argument("--requeue", action="store_true", help="move a stopped spec back to READY so that it runs again")
     return parser
 
 
@@ -133,9 +138,18 @@ def _comment(service: WorkService, args: argparse.Namespace, data: Any) -> dict:
     return {"comment": asdict(service.backend.add_comment(args.id, data, args.dedupe_key))}
 
 
+def _recover(service: WorkService, args: argparse.Namespace, _: Any) -> dict:
+    if args.requeue and not args.id:
+        raise InvalidInput("--requeue needs a work item id")
+    with runner_lock(service.pending.root):
+        if args.requeue:
+            return {"requeued": _summary(service.requeue(args.id))}
+        return service.recover(args.id)
+
+
 _HANDLERS: dict[str, Callable[[WorkService, argparse.Namespace, Any], dict]] = {
     "get": _get, "list": _list, "lookup": _lookup, "publish": _publish, "context": _show_context,
-    "start": _start, "finish": _finish, "comment": _comment,
+    "start": _start, "finish": _finish, "comment": _comment, "recover": _recover,
 }
 
 

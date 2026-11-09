@@ -5,3 +5,7 @@ parallelism = 1
 
 [selection]
 status = "READY"
+
+[comments]
+limit = 20
+max_chars = 2000

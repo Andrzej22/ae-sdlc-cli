@@ -57,7 +57,7 @@ def run_backend(a: argparse.Namespace) -> int:
 
 @contextmanager
 def local_service():
-    yield WorkService(load_backend(ROOT))
+    yield WorkService(load_backend(ROOT), root=ROOT)
 
 
 def run_work(argv: list[str]) -> int:
@@ -124,7 +124,23 @@ def main() -> int:
         except WorkBackendError as exc:
             raise SystemExit(str(exc))
 
-    if a.cmd in {"prepare-work", "execute-work", "workflow"}:
+    if a.cmd == "workflow":
+        argv = [a.workflow, a.scope]
+        if a.provider:
+            argv += ["--provider", a.provider]
+        if a.model:
+            argv += ["--model", a.model]
+        if a.max_specs:
+            argv += ["--max-specs", str(a.max_specs)]
+        try:
+            if backend_name(ROOT) != "local":  # the package needs the credentials and removes them itself
+                return run_package_command(ROOT, Path(__file__), ["workflow", *argv])
+        except WorkBackendError as exc:
+            raise SystemExit(str(exc))
+        providers.remove_tracker_credentials_from_env()
+        return run_workflow.main(argv)
+
+    if a.cmd in {"prepare-work", "execute-work"}:
         providers.remove_tracker_credentials_from_env()
 
     if a.cmd == "prepare-work":
@@ -134,16 +150,6 @@ def main() -> int:
     if a.cmd == "execute-work":
         return run_agent(a.provider, "execute-work", " ".join(a.refs), providers.EXECUTE_TAIL,
                          schemas / "execute-result.schema.json", a.model)
-
-    if a.cmd == "workflow":
-        argv = [a.workflow, a.scope]
-        if a.provider:
-            argv += ["--provider", a.provider]
-        if a.model:
-            argv += ["--model", a.model]
-        if a.max_specs:
-            argv += ["--max-specs", str(a.max_specs)]
-        return run_workflow.main(argv)
 
     if a.cmd == "status":
         only = "READY" if a.ready else "BLOCKED" if a.blocked else None

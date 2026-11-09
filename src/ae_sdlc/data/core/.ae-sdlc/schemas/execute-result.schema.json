@@ -1,13 +1,25 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["status", "work_items", "changed_files", "command_run", "blockers", "summary"],
+  "required": ["status", "work_items", "changed_files", "command_run", "blockers", "summary", "comments"],
   "properties": {
     "status": {"enum": ["COMPLETED", "PARTIAL", "BLOCKED", "FAILED", "NEEDS_INPUT"]},
     "work_items": {"type": "array", "items": {"type": "string"}},
     "changed_files": {"type": "array", "items": {"type": "string"}},
     "command_run": {"type": ["string", "null"]},
     "blockers": {"type": "array", "items": {"type": "string"}},
-    "summary": {"type": "string"}
+    "summary": {"type": "string"},
+    "comments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["work_item_id", "text"],
+        "properties": {
+          "work_item_id": {"type": "string"},
+          "text": {"type": "string"}
+        }
+      }
+    }
   }
 }

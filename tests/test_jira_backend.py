@@ -540,3 +540,31 @@ def test_service_runs_only_specs_whose_dependencies_are_done(fake, backend):
     service.finish_execution(a.id, 0, {"status": "COMPLETED"}, "fallback")
     assert fake.issues[a.id]["status"] == "Done"
     assert [i.id for i in service.eligible_specs(parent.id)] == [b.id]
+
+
+def _ignore_transitions(fake, monkeypatch, times):
+    """Jira answers success and leaves the status alone, as seen against a real site."""
+    real, left = fake.tool_transitionJiraIssue, [times]
+
+    def flaky(issueIdOrKey, transitionId):
+        if left[0]:
+            left[0] -= 1
+            return {"statusName": transitionId.removeprefix("t-")}
+        return real(issueIdOrKey, transitionId)
+
+    monkeypatch.setattr(fake, "tool_transitionJiraIssue", flaky)
+    monkeypatch.setattr("ae_sdlc.work.jira._CONFIRM_DELAY_SECONDS", 0)
+
+
+def test_transition_repeats_when_jira_reports_success_without_moving(fake, backend, monkeypatch):
+    item = backend.create(spec())
+    _ignore_transitions(fake, monkeypatch, 2)
+    assert backend.transition(item.id, Status.IN_PROGRESS).status == Status.IN_PROGRESS
+    assert fake.issues[item.id]["status"] == "In Progress"
+
+
+def test_transition_fails_when_jira_never_applies_it(fake, backend, monkeypatch):
+    item = backend.create(spec())
+    _ignore_transitions(fake, monkeypatch, 3)
+    with pytest.raises(InvalidTransition, match="after requesting"):
+        backend.transition(item.id, Status.IN_PROGRESS)

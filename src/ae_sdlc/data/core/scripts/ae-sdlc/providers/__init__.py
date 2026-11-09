@@ -23,6 +23,8 @@ BACKGROUND_TAIL = (
     "- implement only this spec\n"
     "- do not call ./ae-sdlc or scripts/ae-sdlc/*\n"
     "- do not spawn subagents or run quality/review/verification phases\n"
+    "- comments in the result: only a finding someone must act on, stating what and why, for this "
+    "spec or an item linked to it; otherwise an empty list\n"
     "- return the structured result and stop"
 )
 

@@ -63,7 +63,7 @@ For an epic, run once:
 
 Do not expand product scope beyond the selected artifacts.
 
-When an automation runner says `runner_owns_status=true`, make no `./ae-sdlc` call at all: read the spec under `docs/product/` directly and skip steps 2 and 6's commands.
+When an automation runner says `runner_owns_status=true`, make no `./ae-sdlc` call at all: use the spec and comments given in the prompt when they are there, otherwise read the spec under `docs/product/` directly, and skip steps 2 and 6's commands.
 
 ### 2. Start each spec
 
@@ -124,7 +124,7 @@ Never edit workflow status yourself. After implementation, write the result for 
 
 Add a comment only for a finding someone must act on, not for progress. Write the text to a file under `.ae-sdlc-runtime/`, then run `./ae-sdlc work comment <ID> --text-file <file>`. The local backend does not store comments and answers `capability_missing`; put the finding in the final response instead.
 
-When an automation runner explicitly says it owns status, do not edit workflow status or run these commands; return the structured result and let the runner update it.
+When an automation runner explicitly says it owns status, do not edit workflow status or run these commands; return the structured result and let the runner update it. Put a finding someone must act on in the result's `comments`, addressed to this spec or an item linked to it, instead of calling `work comment`.
 
 ### 7. Stop
 

@@ -45,14 +45,13 @@ def test_runs_ready_specs_in_dependency_order_and_marks_done(runner, project, lo
     assert status_of(project, load_store, "SPEC-011") == "DONE"
 
 
-def test_QUIRK_two_runs_in_the_same_second_crash(runner, project, monkeypatch):
-    """QUIRK: run dir is named by 1-second timestamp and created with exist_ok=False."""
+def test_two_runs_in_the_same_second_get_separate_directories(runner, project, monkeypatch):
     import time
     monkeypatch.setattr(time, "strftime", lambda fmt: "20260101-000000")
     write_spec(project, "SPEC-001", status="DRAFT")
     runner.main(["nightly", "SPEC-001"])
-    with pytest.raises(FileExistsError):
-        runner.main(["nightly", "SPEC-001"])
+    runner.main(["nightly", "SPEC-001"])
+    assert len(list((project / ".ae-sdlc-runtime" / "runs").glob("20260101-000000-*"))) == 2
 
 
 def test_execution_report_written_under_runtime(runner, project, capsys):
@@ -73,16 +72,15 @@ def test_blocked_and_needs_input_become_BLOCKED_with_blocker(runner, project, lo
     assert s.status == "BLOCKED" and s.meta["blocker"] == "pick db"
 
 
-def test_QUIRK_failed_result_is_recorded_as_BLOCKED(runner, project, load_store):
-    """QUIRK: FAILED/PARTIAL/nonzero exit set the spec to BLOCKED and count as 'failed'.
-    PR 6 requires infra failures NOT be classified as product blockers - this is a deliberate change."""
+def test_failed_result_is_BLOCKED_and_reported_as_failed(runner, project, load_store):
+    """Decision D2, revisited in PR 6: the status is BLOCKED on every backend; the reason marks the failure."""
     write_spec(project, "SPEC-001")
     runner.script["SPEC-001"] = (0, {"status": "FAILED", "blockers": ["boom"], "summary": ""})
     assert runner.main(["nightly", "SPEC-001"]) == 1
     assert status_of(project, load_store, "SPEC-001") == "BLOCKED"
 
 
-def test_QUIRK_completed_with_nonzero_exit_is_not_done(runner, project, load_store):
+def test_completed_with_nonzero_exit_is_not_done(runner, project, load_store):
     write_spec(project, "SPEC-001")
     runner.script["SPEC-001"] = (3, {"status": "COMPLETED", "blockers": [], "summary": "x"})
     assert runner.main(["nightly", "SPEC-001"]) == 1
@@ -131,8 +129,8 @@ def test_parallelism_other_than_one_rejected(runner, project):
         runner.main(["nightly", "SPEC-001"])
 
 
-def test_QUIRK_in_progress_spec_is_not_recovered_or_rerun(runner, project):
-    """A spec left IN_PROGRESS by a crashed run is silently ignored (no recovery path today)."""
+def test_in_progress_spec_is_not_rerun(runner, project):
+    """A spec left IN_PROGRESS by a crashed run waits for an explicit `work recover --requeue`."""
     write_spec(project, "SPEC-001", status="IN_PROGRESS")
     runner.main(["nightly", "SPEC-001"])
     assert runner.calls == []

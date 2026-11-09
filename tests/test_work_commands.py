@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import types
 import os
 import re
 import stat
@@ -433,3 +434,65 @@ def test_generated_project_validates(everything):
                           capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout
     assert "WARNING" not in proc.stdout
+
+
+# --- workflow over a remote backend ---
+
+
+def test_workflow_delegates_before_credentials_are_removed(project, tmp_path):
+    select_backend(project, "linear")
+    stub = tmp_path / "stub"
+    stub.write_text('#!/bin/sh\necho "$* key=$LINEAR_API_KEY"\n')
+    stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+    proc = subprocess.run([sys.executable, "-I", str(project / "ae-sdlc"), "--provider", "claude", "workflow", "nightly", "ENG-1"],
+                          cwd=project, capture_output=True, text=True,
+                          env={"AE_SDLC_BIN": str(stub), "PATH": os.environ["PATH"], "LINEAR_API_KEY": "secret"})
+    assert proc.stdout.strip() == f"_work --root {project} workflow nightly ENG-1 --provider claude key=secret"
+
+
+def test_remote_workflow_runs_agents_without_tracker_credentials(linear, capsys, monkeypatch):
+    project, fake = linear
+    doc = {"epic": {"title": "Billing", "description": BODY, "status": "READY"},
+           "specs": [{"ref": "a", "title": "API", "description": BODY, "status": "READY"}]}
+    rc, out = remote(project, capsys, monkeypatch, "publish", "--json-stdin", stdin=json.dumps(doc))
+    assert rc == 0
+    epic_id = out["epic"]["id"]
+
+    seen = []
+
+    def fake_agent(skill, args, tail, schema, model, background=False):
+        seen.append((args, tail, os.environ.get("LINEAR_API_KEY")))
+        return 0, {"status": "COMPLETED", "summary": "shipped", "blockers": []}
+
+    adapter = types.SimpleNamespace(run=fake_agent, check_cli=lambda: None)
+    providers = types.SimpleNamespace(resolve=lambda name=None: "fake", load=lambda name: adapter, BACKGROUND_TAIL="runner_owns_status=true",
+                                      remove_tracker_credentials_from_env=lambda: os.environ.pop("LINEAR_API_KEY", None))
+    monkeypatch.setattr(backend_cli.importlib, "import_module", lambda name: providers)
+    monkeypatch.setenv("LINEAR_API_KEY", "secret")
+    assert cli.main(["_work", "--root", str(project), "workflow", "nightly", epic_id]) == 0
+    assert len(seen) == 1 and seen[0][2] is None and BODY.strip().splitlines()[0] in seen[0][1]
+    rc, out = remote(project, capsys, monkeypatch, "get", seen[0][0])
+    assert out["item"]["status"] == "DONE"
+
+
+def test_recover_reports_nothing_owed(project):
+    rc, out = work(project, "recover")
+    assert rc == 0 and out == {"ok": True, "recovered": [], "remaining": []}
+
+
+def test_requeue_moves_a_blocked_spec_back_to_ready(project):
+    write_spec(project, "SPEC-001", status="BLOCKED", extra="blocker: why")
+    rc, out = work(project, "recover", "SPEC-001", "--requeue")
+    assert rc == 0 and out["requeued"]["status"] == "READY" and status_of(project, "SPEC-001") == "READY"
+
+
+def test_start_refuses_a_spec_with_an_owed_update(project):
+    write_spec(project, "SPEC-001", status="IN_PROGRESS")
+    pending = project / ".ae-sdlc-runtime" / "pending"
+    pending.mkdir(parents=True)
+    (pending / "SPEC-001.json").write_text(json.dumps({"work_id": "SPEC-001", "target_status": "DONE", "blocker": None,
+                                                        "allowed_from": ["IN_PROGRESS"], "comments": []}))
+    rc, out = work(project, "start", "SPEC-001")
+    assert rc == 5 and "recover" in out["error"]["message"]
+    rc, out = work(project, "recover", "SPEC-001")
+    assert rc == 0 and out["recovered"][0]["id"] == "SPEC-001" and status_of(project, "SPEC-001") == "DONE"

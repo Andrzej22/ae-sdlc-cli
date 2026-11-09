@@ -75,9 +75,9 @@ def test_lifecycle_ready_in_progress_done(project, work, load_store):
 @pytest.mark.parametrize("rc,result,disposition,detail", [
     (0, {"status": "NEEDS_INPUT", "blockers": ["pick db"]}, "blocked", "pick db"),
     (0, {"status": "BLOCKED"}, "blocked", "needs input"),
-    (0, {"status": "FAILED", "summary": "boom"}, "failed", "boom"),
-    (0, {"status": "PARTIAL"}, "failed", "fallback"),
-    (3, {"status": "COMPLETED"}, "failed", "fallback"),
+    (0, {"status": "FAILED", "summary": "boom"}, "failed", "Execution failed: boom"),
+    (0, {"status": "PARTIAL"}, "failed", "Execution failed: fallback"),
+    (3, {"status": "COMPLETED"}, "failed", "Execution failed: fallback"),
 ])
 def test_non_completed_outcomes_become_blocked(project, work, rc, result, disposition, detail):
     write_spec(project, "SPEC-001")
@@ -229,6 +229,18 @@ class FakeBackend:
     def list_specs(self, scope, status=None):
         return [i for i in self.items.values() if i.kind == "spec" and (status is None or i.status == status)]
 
+    def get_dependencies(self, work_id):
+        return []
+
+    def get_related(self, work_id):
+        return []
+
+    def get_comments(self, work_id, limit=None):
+        return []
+
+    def add_comment(self, work_id, text, dedupe_key=None):
+        return None
+
     def transition(self, work_id, target_status, blocker=None):
         self.items[work_id].status = str(target_status)
         return self.items[work_id]
@@ -245,7 +257,7 @@ def test_runner_accepts_an_injected_backend(project, load_store, monkeypatch):
     monkeypatch.setattr(providers, "resolve", lambda n=None: "fake")
     monkeypatch.setattr(providers, "load", lambda n: adapter)
     fake = FakeBackend(models, [models.WorkItem("ENG-1", "spec", "T", "", "READY")])
-    assert run_workflow.main(["nightly", "ANY"], backend=fake) == 0
+    assert run_workflow.main(["nightly", "ENG-1"], backend=fake) == 0
     assert fake.items["ENG-1"].status == "DONE"
 
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import getpass
+import importlib
 import json
 import sys
 from collections.abc import Iterator
@@ -21,6 +22,7 @@ from .work.mcp.capabilities import invoke, operation
 from .work.mcp.client import McpClient, provider_endpoint
 from .work.mcp.doctor import healthy, rows, run_doctor
 from .work.mcp.errors import CredentialsMissing, InvalidResponse
+from .work.runner import run_workflow as run_workflow_specs
 from .work.service import WorkService
 
 _REMOTE_BACKENDS = {"linear": LinearWorkBackend, "jira": JiraWorkBackend}
@@ -164,15 +166,36 @@ def open_service(root: Path) -> Iterator[WorkService]:
     """Yield a service over the active backend, holding one MCP connection for a remote one."""
     name = backend_name(root)
     if name not in _REMOTE_BACKENDS:
-        yield WorkService(load_backend(root))  # local, or the error naming an unknown backend
+        yield WorkService(load_backend(root), root=root)  # local, or the error naming an unknown backend
         return
     with McpClient(provider_endpoint(name), auth.resolve(name)) as client:
-        yield WorkService(_REMOTE_BACKENDS[name](client, _settings(root, name)))
+        yield WorkService(_REMOTE_BACKENDS[name](client, _settings(root, name)), root=root)
 
 
 def run_work(root: Path, argv: list[str]) -> int:
     _warn_on_version_skew(root)
     return commands.execute(commands.parse(argv), lambda: open_service(root))
+
+
+def run_workflow(root: Path, argv: list[str]) -> int:
+    """Run a workflow over a remote backend, using the provider adapters installed in the project."""
+    _warn_on_version_skew(root)
+    sys.path.insert(0, str(root / "scripts" / "ae-sdlc"))
+    providers = importlib.import_module("providers")
+    try:
+        name = backend_name(root)
+        credential = auth.resolve(name)  # once, because agents must not inherit it from the environment
+    except WorkBackendError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return exc.exit_code
+    providers.remove_tracker_credentials_from_env()
+
+    @contextmanager
+    def services() -> Iterator[WorkService]:
+        with McpClient(provider_endpoint(name), credential) as client:
+            yield WorkService(_REMOTE_BACKENDS[name](client, _settings(root, name)), root=root)
+
+    return run_workflow_specs(root, argv, providers, services)
 
 
 def run_status(root: Path, scope: str | None, only_status: str | None) -> int:

@@ -67,6 +67,8 @@ def cmd_work(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
     if args.area == "work":
         return backend_cli.run_work(root, args.argv)
+    if args.area == "workflow":
+        return backend_cli.run_workflow(root, args.argv)
     if args.area == "status":
         return backend_cli.run_status(root, args.scope, args.status)
     return backend_cli.run(root, args.action, args.provider)
@@ -94,8 +96,9 @@ def main(argv: list[str] | None = None) -> int:
     area = areas.add_parser("status")
     area.add_argument("scope", nargs="?")
     area.add_argument("--status", choices=["READY", "BLOCKED"])
-    area = areas.add_parser("work", add_help=False)
-    area.add_argument("argv", nargs=argparse.REMAINDER)
+    for name in ("work", "workflow"):
+        area = areas.add_parser(name, add_help=False)
+        area.add_argument("argv", nargs=argparse.REMAINDER)
 
     args = ap.parse_args(argv)
     return args.func(args)

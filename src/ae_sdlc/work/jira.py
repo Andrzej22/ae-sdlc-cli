@@ -8,6 +8,7 @@ read-then-compare, and duplicate prevention leaves a small race.
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Mapping
 from typing import Any
 
@@ -25,6 +26,8 @@ _OP_LABEL = "ae-sdlc-op-"
 _NOT_FOUND = re.compile(r"not found|does not exist|no issue", re.IGNORECASE)
 _LINK_TYPE = "Blocks"
 _PAGE = 100
+_CONFIRM_ATTEMPTS = 3
+_CONFIRM_DELAY_SECONDS = 1.5
 _READ_FIELDS = ["summary", "description", "status", "labels", "issuetype", "parent", "updated"]
 _SUPPLIED_FIELDS = {"summary", "issuetype", "project", "reporter", "description", "parent", "labels"}
 
@@ -365,18 +368,26 @@ class JiraWorkBackend:
         if set(labels) != set(item.metadata["labels"]):
             self._call("update_issue", {"issueIdOrKey": item.id, "fields": {"labels": labels}})
 
+    def _apply_until_confirmed(self, item: WorkItem, target: str) -> WorkItem:
+        """Jira has been seen to answer "transitioned successfully" and leave the status unchanged."""
+        for attempt in range(_CONFIRM_ATTEMPTS):
+            if attempt:
+                time.sleep(_CONFIRM_DELAY_SECONDS)
+            self._apply_status(item, target)
+            item = self._fetch(item.id)
+            if item.status == target:
+                return item
+        raise InvalidTransition(f"{item.id} is {item.status} after requesting {target}")
+
     def transition(self, work_id: str, target_status: str, blocker: str | None = None) -> WorkItem:
         """Apply the status and confirm it by reading it back. Retrying after a failure is safe."""
         if target_status not in set(Status):
             raise InvalidTransition(f"invalid status: {target_status}")
         item = self._fetch(work_id)
         try:
-            self._apply_status(item, target_status)
+            confirmed = self._apply_until_confirmed(item, target_status)
         except ToolFailed as exc:
             raise InvalidTransition(f"{item.id} cannot move to {target_status}: {exc}") from exc
-        confirmed = self._fetch(item.id)
-        if confirmed.status != target_status:
-            raise InvalidTransition(f"{item.id} is {confirmed.status} after requesting {target_status}")
         if target_status == Status.BLOCKED:
             latest = self._latest_blocker(item.id)
             if blocker and latest != blocker:
