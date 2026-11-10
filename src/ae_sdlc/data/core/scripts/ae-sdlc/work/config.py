@@ -1,8 +1,10 @@
 """Backend selection. .ae-sdlc/work.toml is the only authoritative setting; absent means local."""
 from __future__ import annotations
 
+import datetime
 import json
 import os
+import re
 import tempfile
 import tomllib
 from pathlib import Path
@@ -29,13 +31,43 @@ def read_config(root: Path) -> dict:
         raise WorkConfigError(f"cannot read {path}: {exc}") from exc
 
 
-def render_toml(tables: dict[str, dict[str, str]]) -> str:
-    """Render tables of strings. A JSON string without ASCII escaping is a valid TOML basic string."""
-    blocks = []
-    for table, values in tables.items():
-        lines = [f"[{table}]", *(f"{k} = {json.dumps(v, ensure_ascii=False)}" for k, v in values.items())]
-        blocks.append("\n".join(lines) + "\n")
-    return "\n".join(blocks)
+_BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def _key(key: str) -> str:
+    return key if _BARE_KEY.fullmatch(key) else json.dumps(key, ensure_ascii=False)
+
+
+def _value(value: object) -> str:
+    """Render one value. A JSON string without ASCII escaping is a valid TOML basic string."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float, str)):
+        return json.dumps(value, ensure_ascii=False) if isinstance(value, str) else repr(value)
+    if isinstance(value, (datetime.date, datetime.time)):
+        return value.isoformat()
+    if isinstance(value, list):
+        return "[" + ", ".join(_value(v) for v in value) + "]"
+    if isinstance(value, dict):
+        return "{ " + ", ".join(f"{_key(k)} = {_value(v)}" for k, v in value.items()) + " }"
+    raise WorkConfigError(f"cannot write a TOML value of type {type(value).__name__}")
+
+
+def _render_table(lines: list[str], path: list[str], table: dict) -> None:
+    values = {k: v for k, v in table.items() if not isinstance(v, dict)}
+    children = {k: v for k, v in table.items() if isinstance(v, dict)}
+    if path and (values or not children):
+        lines += [*([""] if lines else []), f"[{'.'.join(map(_key, path))}]"]
+    lines += [f"{_key(k)} = {_value(v)}" for k, v in values.items()]
+    for name, child in children.items():
+        _render_table(lines, [*path, name], child)
+
+
+def render_toml(data: dict) -> str:
+    """Render parsed TOML back to text, nested tables included, so that a rewrite keeps every value."""
+    lines: list[str] = []
+    _render_table(lines, [], data)
+    return "\n".join(lines) + "\n" if lines else ""
 
 
 def atomic_write(path: Path, text: str, mode: int) -> None:
@@ -53,10 +85,7 @@ def atomic_write(path: Path, text: str, mode: int) -> None:
 
 
 def write_config(root: Path, config: dict) -> None:
-    """Rewrite work.toml from its parsed form. Comments do not survive; values do."""
-    for table, values in config.items():
-        if not isinstance(values, dict) or not all(isinstance(v, str) for v in values.values()):
-            raise WorkConfigError(f"{config_path(root)}: [{table}] must contain only string settings")
+    """Rewrite work.toml from its parsed form. Comments do not survive; values and tables do."""
     atomic_write(config_path(root), render_toml(config), 0o644)
 
 

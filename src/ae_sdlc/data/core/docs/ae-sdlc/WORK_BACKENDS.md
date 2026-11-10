@@ -2,12 +2,13 @@
 
 Epics and specs live in one active backend: `local` (Markdown under `docs/product/`, the default), `linear` or `jira`. Code is always written to this repository; only the work items move.
 
-| Canonical concept | local | Linear | Jira |
-| --- | --- | --- | --- |
-| Epic | `docs/product/epics/EPIC-*.md` | Project | Epic |
-| Spec | Markdown file | Issue | Task, or the configured work type |
-| Dependency | `dependencies:` frontmatter | blocked-by relation | `Blocks` link |
-| Comments | not supported | yes | yes |
+| Canonical concept | local | Linear | Linear with `project` set | Jira |
+| --- | --- | --- | --- | --- |
+| Where work lives | `docs/product/` | the team | one project of the team | the project |
+| Epic | `docs/product/epics/EPIC-*.md` | a new Project | Issue labelled `ae-sdlc-epic` | Epic |
+| Spec | Markdown file | Issue | sub-issue of its epic, or a standalone Issue | Task, or the configured work type |
+| Dependency | `dependencies:` frontmatter | blocked-by relation | blocked-by relation | `Blocks` link |
+| Comments | not supported | yes | yes | yes |
 
 ## Selecting a backend
 
@@ -19,6 +20,21 @@ Epics and specs live in one active backend: `local` (Markdown under `docs/produc
 ```
 
 Remote backends need the installed `ae-sdlc` package (`pipx install`, `uv tool install`); `local` needs neither the package nor credentials. The selection and non-secret settings are in `.ae-sdlc/work.toml`. With no file, the backend is `local`.
+
+```toml
+[work]
+backend = "linear"
+
+[linear]
+team = "Andrzej22"
+project = "ae-sdlc-test"   # optional; see below
+```
+
+### Linear: one project for all work
+
+Without `project`, every epic becomes a new Linear Project. With `project` set under `[linear]`, all work goes into that one project, as with a Jira project: an epic is an Issue labelled `ae-sdlc-epic` and its specs are sub-issues. The project can be created by hand in Linear; `backend connect linear` lists the team's projects to choose from, or set the project's name, `P-…` identifier or slug yourself. ae-sdlc never changes the project's own status, and `status`, `work list` and `workflow` take the epic's issue key (`AND-7`), not the project. Changing `project` later does not move existing work.
+
+The plan's suggested `[work.context]` and `[work.execution]` tables are not read; comment limits are `[comments]` in the workflow file. Such tables are kept when `work.toml` is rewritten.
 
 ### Local fallback and switching
 
@@ -32,6 +48,8 @@ The first match is used, per provider:
 2. `~/.config/ae-sdlc/credentials.toml` (respects `XDG_CONFIG_HOME`; `AE_SDLC_CREDENTIALS_FILE` overrides the path), which must have mode `600`.
 
 `backend connect` writes that file through a hidden prompt. Never put a token in `work.toml` or on a command line.
+
+Coding agents never inherit `LINEAR_*` or `ATLASSIAN_*`. For interactive `prepare-work` and `execute-work`, whose agent runs `./ae-sdlc work` itself, credentials found in the environment are moved to a temporary mode-600 file for the length of the run; `AE_SDLC_CREDENTIALS_FILE` gives the agent its path, not the secret, and the file is deleted afterwards. Credentials from `credentials.toml` are used as they are.
 
 **Linear** needs an API key whose user can read the team and create issues, projects, labels and comments.
 
@@ -97,7 +115,7 @@ If `remote_edits` in the report lists a spec, someone changed it while its agent
 
 ## Known limitations
 
-- Credential mode `600` protects against commits and other OS users. It does not stop a coding agent running as the same user with shell access from reading the file.
+- Credential mode `600` protects against commits and other OS users. It does not stop a coding agent running as the same user with shell access from reading the file, including the temporary file of an interactive run.
 - Jira and Linear have no conditional writes. Status and revision are re-read before a spec starts, but runners on different machines can still race; run one per project.
 - Edits made during an agent run are reported, not merged. Detection relies on the tracker's update time, so a comment or other activity on the item can also be listed.
 - A Jira workflow without a direct transition to a mapped status fails with an error; the workflow is never changed for you.

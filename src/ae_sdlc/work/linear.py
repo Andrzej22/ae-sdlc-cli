@@ -1,4 +1,8 @@
-"""WorkBackend over Linear's MCP server: Epic -> Project, Spec -> Issue.
+"""WorkBackend over Linear's MCP server.
+
+By default an epic is a Linear Project and a spec is an Issue. With `project` set under [linear], all
+work stays in that one project, like a Jira project: an epic is an Issue labelled ae-sdlc-epic and its
+specs are sub-issues. The project itself is never an epic then, so ae-sdlc never changes its status.
 
 Linear offers no conditional writes or idempotency keys, so duplicate prevention stores a stable
 operation key in the description and looks it up before creating and after a lost response. Revision
@@ -21,10 +25,12 @@ from .models import Status, WorkComment, WorkItem
 from .remote import BLOCKER_MARKER, BLOCKER_PREFIX, COMMENT_MARKER, name_of, op_key, sort_key
 
 MARKER_LABEL = "ae-sdlc"
+EPIC_LABEL = "ae-sdlc-epic"
 _OP_PREFIX = "ae-sdlc-op: "
 _FOOTER = re.compile(r"\s*(?:^[-*_]{3,}\s*)?^ae-sdlc-op:\s*([0-9a-f]{32})\s*\Z", re.MULTILINE)
 _ISSUE_KEY = re.compile(r"[A-Za-z][A-Za-z0-9]*-\d+")
 _PROJECT_KEY = re.compile(r"P-[A-Za-z0-9]+-\d+")
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
 _NOT_FOUND = re.compile(r"not found|could not find|does not exist", re.IGNORECASE)
 
 _ISSUE_FIELDS = ["id", "title", "description", "url", "updatedAt", "status", "statusType", "labels",
@@ -64,6 +70,8 @@ class LinearWorkBackend:
         self.client = client
         self.settings = settings
         self.team = settings["team"]
+        self.project = settings.get("project") or None
+        self._issue_keys: dict[str, str] = {}  # issue UUID -> identifier, for parent references
         self._mapping: StatusMapping | None = None
         self._tools: set[str] | None = None
         self._labels: set[str] = set()
@@ -124,13 +132,28 @@ class LinearWorkBackend:
         state_type = row.get("statusType") or (status.get("type") if isinstance(status, dict) else None)
         labels = [name_of(label) for label in row.get("labels") or []]
         description, op = _split_footer(row["description"] or "")
+        kind = "epic" if EPIC_LABEL in labels else "spec"
+        if kind == "epic":
+            parent = None
+        elif self.project:
+            parent = self._issue_key(_ref(row.get("parentId")))
+        else:
+            parent = _ref(row.get("projectId")) or _ref(row.get("project"))
         return WorkItem(
-            id=str(key), kind="spec", title=row.get("title"), description=description,
-            status=self.mapping.canonical(state, state_type, labels),
-            parent_id=_ref(row.get("projectId")) or _ref(row.get("project")),
+            id=str(key), kind=kind, title=row.get("title"), description=description,
+            status=self.mapping.canonical(state, state_type, labels), parent_id=parent,
             revision=row.get("updatedAt"), url=row.get("url"),
-            metadata={"state": state, "labels": labels, "op_key": op, "managed": MARKER_LABEL in labels},
+            metadata={"state": state, "labels": labels, "op_key": op, "managed": MARKER_LABEL in labels,
+                      "entity": "issue"},
         )
+
+    def _issue_key(self, ref: str | None) -> str | None:
+        """Return the identifier (AND-7) for a parent reference, which Linear may give as a UUID."""
+        if not ref or not _UUID.fullmatch(ref):
+            return ref
+        if ref not in self._issue_keys:
+            self._issue_keys[ref] = self._read_issue(ref).id
+        return self._issue_keys[ref]
 
     def _project_item(self, row: dict) -> WorkItem:
         key = row.get("identifier") or row.get("id")
@@ -144,7 +167,7 @@ class LinearWorkBackend:
             id=str(key), kind="epic", title=row.get("name"), description=description,
             status=_PROJECT_READ_STATE.get(state.lower(), state),
             revision=row.get("updatedAt"), url=row.get("url"),
-            metadata={"state": state, "op_key": op, "managed": op is not None},
+            metadata={"state": state, "op_key": op, "managed": op is not None, "entity": "project"},
         )
 
     def _comment(self, row: dict, work_id: str) -> WorkComment:
@@ -171,6 +194,9 @@ class LinearWorkBackend:
         return item
 
     def _read_project(self, work_id: str) -> WorkItem:
+        if self.project:
+            raise WorkItemNotFound(f"unknown work item: {work_id}; with [linear] project set, epics are issues "
+                                   f"labelled {EPIC_LABEL}, not Linear projects")
         try:
             return self._project_item(self._call("read_epic", {"query": work_id}, read=True).require(dict, "get_project"))
         except ToolFailed as exc:
@@ -189,8 +215,12 @@ class LinearWorkBackend:
                 raise
             return self._read_project(work_id)  # a UUID or slug can only be told apart by trying
 
+    @staticmethod
+    def _is_project(item: WorkItem) -> bool:
+        return item.metadata.get("entity") == "project"
+
     def _comment_rows(self, item: WorkItem) -> list[dict]:
-        parent = {"projectId" if item.kind == "epic" else "issueId": item.id}
+        parent = {"projectId" if self._is_project(item) else "issueId": item.id}
         found = self._pages("read_comments", {**parent, "limit": 250, "orderBy": "createdAt"}, "comments")
         return sorted(found, key=lambda row: str(row.get("createdAt") or ""))
 
@@ -210,12 +240,18 @@ class LinearWorkBackend:
         return self._with_blocker(self._fetch(work_id))
 
     def _managed_projects(self) -> list[WorkItem]:
+        if self.project:
+            return []
         found = self._pages("list_epics", {"team": self.team, "limit": 50, "fields": _PROJECT_FIELDS}, "projects")
         return [item for item in map(self._project_item, found) if item.metadata["managed"]]
 
     def _managed_issues(self) -> list[WorkItem]:
-        arguments = {"team": self.team, "label": MARKER_LABEL, "limit": 250, "fields": _ISSUE_FIELDS}
+        arguments = {"team": self.team, "label": MARKER_LABEL, "limit": 250, "fields": _ISSUE_FIELDS,
+                     **self._in_project()}
         return [self._issue_item(row) for row in self._pages("search_issues", arguments, "issues")]
+
+    def _in_project(self) -> dict[str, str]:
+        return {"project": self.project} if self.project else {}
 
     def list_items(self) -> list[WorkItem]:
         """Return managed projects and issues. Dependencies stay empty: Linear's list omits relations."""
@@ -229,16 +265,20 @@ class LinearWorkBackend:
             return []
         if target.kind == "spec":
             return [self._with_blocker(target)] if status is None or target.status == status else []
-        arguments = {"project": target.id, "limit": 250, "fields": _ISSUE_FIELDS}
+        container = {"project": target.id} if self._is_project(target) else {"parentId": target.id}
+        arguments = {**container, "limit": 250, "fields": _ISSUE_FIELDS}
         listed = [self._issue_item(row) for row in self._pages("search_issues", arguments, "issues")]
-        chosen = [i for i in listed if i.metadata["managed"] and (status is None or i.status == status)]
+        chosen = [i for i in listed if i.metadata["managed"] and i.kind == "spec"
+                  and (status is None or i.status == status)]
         # Dependencies decide eligibility, and only a single-issue read returns them.
         return sorted((self.get(i.id) for i in chosen), key=sort_key)
 
     def search(self, query: str, limit: int = 20) -> list[WorkItem]:
         """Find existing issues and projects by text, managed or not. Dependencies are not loaded."""
         issues = self._call("search_issues", {"team": self.team, "query": query, "limit": limit,
-                                              "fields": _ISSUE_FIELDS}, read=True).data
+                                              "fields": _ISSUE_FIELDS, **self._in_project()}, read=True).data
+        if self.project:
+            return list(map(self._issue_item, rows(issues, "issues", "nodes")))
         projects = self._call("list_epics", {"team": self.team, "query": query, "limit": min(limit, 50),
                                              "fields": _PROJECT_FIELDS}, read=True).data
         return [*map(self._project_item, rows(projects, "projects", "nodes")),
@@ -263,8 +303,9 @@ class LinearWorkBackend:
 
     def _find_created(self, kind: str, key: str) -> WorkItem | None:
         """Scan managed work rather than text search, whose index may lag behind a create."""
-        candidates = self._managed_projects() if kind == "epic" else self._managed_issues()
-        match = next((i for i in candidates if i.metadata["op_key"] == key and i.status != CANCELED), None)
+        candidates = self._managed_projects() if self._epic_is_project(kind) else self._managed_issues()
+        match = next((i for i in candidates if i.kind == kind and i.metadata["op_key"] == key
+                      and i.status != CANCELED), None)
         return self.get(match.id) if match else None
 
     def create(self, item: WorkItem, idempotency_key: str | None = None) -> WorkItem:
@@ -278,19 +319,22 @@ class LinearWorkBackend:
             raise InvalidTransition(f"invalid status: {item.status}")
         if not item.title:
             raise ValueError("a Linear work item needs a title")
-        self._require("create_epic" if item.kind == "epic" else "create_issue")
+        self._require("create_epic" if self._epic_is_project(item.kind) else "create_issue")
         if item.kind == "spec" and item.dependencies:
             self._require("create_dependencies")
         identity = idempotency_key or f"{item.kind}\0{item.parent_id}\0{item.title.strip().lower()}"
         key = op_key(identity)
         self._ensure_label(MARKER_LABEL)
-        if item.kind == "spec" and item.status == Status.BLOCKED and self.mapping.uses_blocked_label:
+        if item.kind == "epic" and self.project:
+            self._ensure_label(EPIC_LABEL)
+        if not self._epic_is_project(item.kind) and item.status == Status.BLOCKED and self.mapping.uses_blocked_label:
             self._ensure_label(BLOCKED_LABEL)
 
         existing = self._find_created(item.kind, key)
         if existing is None:
             try:
-                created = self._save_new_epic(item, key) if item.kind == "epic" else self._save_new_issue(item, key)
+                created = (self._save_new_epic(item, key) if self._epic_is_project(item.kind)
+                           else self._save_new_issue(item, key))
                 return self.get(created)
             except TransportFailure:
                 # The request may have been applied with only the response lost.
@@ -300,6 +344,9 @@ class LinearWorkBackend:
         existing.metadata["reused"] = True
         return existing
 
+    def _epic_is_project(self, kind: str) -> bool:
+        return kind == "epic" and not self.project
+
     def _new_id(self, response: ToolResponse, tool: str) -> str:
         row = response.require(dict, tool)
         created = row.get("identifier") or row.get("id")
@@ -308,14 +355,14 @@ class LinearWorkBackend:
         return str(created)
 
     def _save_new_issue(self, item: WorkItem, key: str) -> str:
-        labels = [MARKER_LABEL]
+        labels = [MARKER_LABEL, *([EPIC_LABEL] if item.kind == "epic" else [])]
         if item.status == Status.BLOCKED and self.mapping.uses_blocked_label:
             labels.append(BLOCKED_LABEL)
         arguments: dict[str, Any] = {"team": self.team, "title": item.title, "labels": labels,
                                      "description": _with_footer(item.description, key),
-                                     "state": self.mapping.state_for(item.status)}
+                                     "state": self.mapping.state_for(item.status), **self._in_project()}
         if item.parent_id:
-            arguments["project"] = item.parent_id
+            arguments["parentId" if self.project else "project"] = item.parent_id
         if item.dependencies:
             arguments["blockedBy"] = item.dependencies
         return self._new_id(self._call("create_issue", arguments), "save_issue")
@@ -330,12 +377,17 @@ class LinearWorkBackend:
         if expected_revision is not None and current.revision != expected_revision:
             raise RevisionConflict(f"{item.id} changed since revision {expected_revision}")
         description = _with_footer(item.description, current.metadata["op_key"])
-        if current.kind == "epic":
+        if self._is_project(current):
             self._require("create_epic")  # save_project both creates and updates
             self._call("create_epic", {"id": current.id, "name": item.title, "description": description})
             return self.get(current.id)
-        arguments: dict[str, Any] = {"id": current.id, "title": item.title, "description": description,
-                                     "project": item.parent_id}
+        arguments: dict[str, Any] = {"id": current.id, "title": item.title, "description": description}
+        if self.project:
+            arguments["project"] = self.project
+            if current.kind == "spec":
+                arguments["parentId"] = item.parent_id
+        else:
+            arguments["project"] = item.parent_id
         added = [d for d in item.dependencies if d not in current.dependencies]
         removed = [d for d in current.dependencies if d not in item.dependencies]
         if added or removed:
@@ -359,7 +411,7 @@ class LinearWorkBackend:
         return next((row for row in self._comment_rows(item) if marker in (row.get("body") or "")), None)
 
     def _post_comment(self, item: WorkItem, body: str) -> dict:
-        parent = {"projectId" if item.kind == "epic" else "issueId": item.id}
+        parent = {"projectId" if self._is_project(item) else "issueId": item.id}
         return self._call("add_comment", {**parent, "body": body}).require(dict, "save_comment")
 
     def add_comment(self, work_id: str, text: str, dedupe_key: str | None = None) -> WorkComment:
@@ -383,7 +435,7 @@ class LinearWorkBackend:
             raise InvalidTransition(f"invalid status: {target_status}")
         item = self._fetch(work_id)
         try:
-            if item.kind == "epic":
+            if self._is_project(item):
                 self._require("create_epic")
                 self._call("create_epic", {"id": item.id, "state": _PROJECT_WRITE_STATE[Status(target_status)]})
             else:

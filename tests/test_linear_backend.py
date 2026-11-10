@@ -106,22 +106,31 @@ class FakeLinear:
         self.labels.add(name)
         return {"id": name, "name": name}
 
+    def _issue(self, ref):
+        return next((i for i in self.issues.values() if ref in (i["id"], i["uuid"])), None)
+
     def tool_get_issue(self, id, fields):
-        if id not in self.issues:
+        issue = self._issue(id)
+        if issue is None:
             raise ToolFailed("Entity not found: Issue")
         assert "relations" in fields
-        return self._row(self.issues[id], fields)
+        return self._row(issue, fields)
 
-    def tool_list_issues(self, team=None, label=None, project=None, query=None, limit=50, fields=(), cursor=None):
+    def tool_list_issues(self, team=None, label=None, project=None, parentId=None, query=None, limit=50, fields=(),
+                         cursor=None):
         assert "relations" not in fields, "the real list_issues schema has no relations field"
+        if project is not None and self._project(project) is None:
+            raise ToolFailed("Entity not found: Project")
+        parent = self._issue(parentId) if parentId is not None else None
         found = [i for i in self.issues.values()
                  if (label is None or label in i["labels"])
                  and (project is None or i["projectId"] == self._project(project)["uuid"])
+                 and (parentId is None or (parent is not None and i["parentId"] == parent["uuid"]))
                  and (query is None or query.lower() in (i["title"] + i["description"]).lower())]
         return self._page([self._row(i, fields) for i in found], "issues", cursor)
 
     def tool_save_issue(self, id=None, team=None, title=None, description=None, state=None, labels=None, project=...,
-                        addLabels=(), removeLabels=(), blockedBy=(), removeBlockedBy=()):
+                        addLabels=(), removeLabels=(), blockedBy=(), removeBlockedBy=(), parentId=...):
         for label in [*(labels or ()), *addLabels]:
             if label not in self.labels:
                 raise ToolFailed(f"Label not found: {label}")
@@ -129,7 +138,8 @@ class FakeLinear:
             assert team and title
             number = len(self.issues) + 5
             id = f"AND-{number}"
-            self.issues[id] = {"id": id, "title": title, "description": "", "url": f"https://l/{id}", "status": "Backlog",
+            self.issues[id] = {"id": id, "uuid": f"00000000-0000-0000-0001-{number:012d}", "title": title,
+                               "description": "", "url": f"https://l/{id}", "status": "Backlog",
                                "statusType": "backlog", "labels": [], "project": None, "projectId": None, "parentId": None,
                                "blocked_by": [], "related": []}
         elif id not in self.issues:
@@ -148,6 +158,11 @@ class FakeLinear:
         if project is not ...:
             target = self._project(project) if project else None
             issue["projectId"], issue["project"] = (target["uuid"], target["name"]) if target else (None, None)
+        if parentId is not ...:
+            parent = self._issue(parentId) if parentId else None
+            if parentId and parent is None:
+                raise ToolFailed("Entity not found: Issue")
+            issue["parentId"] = parent["uuid"] if parent else None  # Linear answers with the parent's UUID
         issue["blocked_by"] = [b for b in [*issue["blocked_by"], *blockedBy] if b not in removeBlockedBy]
         issue["updatedAt"] = self._tick()
         return {"id": id}
@@ -616,3 +631,98 @@ def test_reads_are_retry_safe_and_writes_are_not(fake, backend):
     backend.get_comments(issue.id)
     assert seen["get_issue"] == {True} and seen["list_issues"] == {True} and seen["list_comments"] == {True}
     assert seen["save_issue"] == {False} and seen["save_comment"] == {False} and seen["save_issue_label"] == {False}
+
+
+# --- pinned project: [linear] project set, epics are issues inside it ---
+
+@pytest.fixture
+def pinned(fake):
+    fake.tool_save_project(name="Sandbox", addTeams=["AND"])  # created by hand in Linear, not by ae-sdlc
+    return LinearWorkBackend(fake, {"team": "AND", "project": "Sandbox"})
+
+
+def test_pinned_epic_is_a_labelled_issue_and_specs_are_its_sub_issues(fake, pinned):
+    epic_item = pinned.create(epic())
+    child = pinned.create(spec(parent=epic_item.id))
+    standalone = pinned.create(spec("Solo"))
+    assert (epic_item.kind, epic_item.parent_id) == ("epic", None) and epic_item.id.startswith("AND-")
+    assert fake.writes("save_project") == [] and list(fake.projects) == ["P-AND-1"], "no project is created"
+    assert {"ae-sdlc", "ae-sdlc-epic"} <= set(fake.issues[epic_item.id]["labels"])
+    sandbox = fake.projects["P-AND-1"]["uuid"]
+    assert all(fake.issues[i.id]["projectId"] == sandbox for i in (epic_item, child, standalone))
+    assert fake.issues[child.id]["parentId"] == fake.issues[epic_item.id]["uuid"]
+    assert pinned.get(child.id).parent_id == epic_item.id, "the parent UUID is reported as its identifier"
+    assert standalone.parent_id is None
+
+
+def test_pinned_lists_specs_of_an_epic_and_everything_in_the_project(fake, pinned):
+    epic_item = pinned.create(epic())
+    children = [pinned.create(spec(f"S{i}", parent=epic_item.id)) for i in range(3)]
+    pinned.create(spec("Solo"))
+    fake.tool_save_issue(team="AND", title="Outside", description="", labels=["ae-sdlc"], state="Todo")
+    assert [i.id for i in pinned.list_specs(epic_item.id)] == [c.id for c in children]
+    listed = pinned.list_items()
+    assert "Outside" not in {i.title for i in listed} and len(listed) == 5
+    assert {i.kind for i in listed} == {"epic", "spec"}
+
+
+def test_pinned_project_is_not_an_epic(fake, pinned):
+    with pytest.raises(WorkItemNotFound, match="ae-sdlc-epic"):
+        pinned.get("P-AND-1")
+    assert pinned.list_specs("P-AND-1") == []
+
+
+def test_pinned_epic_lifecycle_uses_issue_states_and_comments(fake, pinned):
+    epic_item = pinned.create(epic())
+    assert pinned.transition(epic_item.id, Status.DONE).status == Status.DONE
+    assert fake.issues[epic_item.id]["status"] == "Done"
+    assert fake.projects["P-AND-1"]["status"]["type"] == "backlog", "the pinned project is never transitioned"
+    pinned.add_comment(epic_item.id, "Note")
+    assert [c.body for c in pinned.get_comments(epic_item.id)] == ["Note"]
+
+
+def test_pinned_epic_completes_through_the_service(fake, pinned):
+    epic_item = pinned.create(epic())
+    child = pinned.create(spec(parent=epic_item.id))
+    service = WorkService(pinned)
+    assert not service.epic_progress(epic_item.id)["complete"]
+    service.start_execution(child.id)
+    service.finish_execution(child.id, 0, {"status": "COMPLETED", "summary": "ok"}, "failed")
+    assert service.epic_progress(epic_item.id)["complete"]
+
+
+def test_pinned_repeat_and_lost_response_do_not_duplicate(fake, pinned):
+    first = pinned.create(epic())
+    assert pinned.create(epic()).id == first.id
+    fake.lose_response_of.add("save_issue")
+    child = pinned.create(spec(parent=first.id))
+    assert child.metadata["reused"] is True
+    assert len(fake.issues) == 2
+
+
+def test_pinned_update_keeps_the_project_and_moves_between_epics(fake, pinned):
+    one, two = pinned.create(epic("One")), pinned.create(epic("Two"))
+    child = pinned.create(spec(parent=one.id))
+    moved = pinned.update(WorkItem(child.id, "spec", child.title, SPEC, child.status, parent_id=two.id))
+    assert moved.parent_id == two.id
+    assert fake.issues[child.id]["projectId"] == fake.projects["P-AND-1"]["uuid"]
+    renamed = pinned.update(WorkItem(one.id, "epic", "Renamed", "New", one.status))
+    assert (renamed.kind, renamed.title) == ("epic", "Renamed")
+
+
+def test_pinned_search_stays_in_the_project(fake, pinned):
+    pinned.create(spec("Payments"))
+    fake.tool_save_issue(team="AND", title="Payments elsewhere", description="", state="Todo")
+    assert [i.title for i in pinned.search("payments")] == ["Payments"]
+
+
+def test_pinned_does_not_need_project_creation(fake):
+    fake.tool_save_project(name="Sandbox", addTeams=["AND"])
+    fake.tool_names = [n[5:] for n in dir(FakeLinear) if n.startswith("tool_") and n != "tool_save_project"]
+    assert LinearWorkBackend(fake, {"team": "AND", "project": "Sandbox"}).create(epic()).kind == "epic"
+
+
+def test_pinned_unknown_project_is_reported(fake):
+    backend = LinearWorkBackend(fake, {"team": "AND", "project": "Missing"})
+    with pytest.raises(ToolFailed, match="Project"):
+        backend.list_items() or backend.create(spec())

@@ -84,7 +84,18 @@ def _obtain_credential(provider: str) -> tuple[auth.Credential, dict[str, str] |
 
 def _discover_linear(client: McpClient) -> dict[str, str]:
     teams = rows(client.call("list_teams", {"limit": 250}, retry_safe=True).data, "teams", "nodes")
-    return {"team": _choose("team", [(str(t["name"]), str(t["name"])) for t in teams if t.get("name")])}
+    team = _choose("team", [(str(t["name"]), str(t["name"])) for t in teams if t.get("name")])
+    found = rows(client.call("list_projects", {"team": team, "limit": 50}, retry_safe=True).data, "projects", "nodes")
+    names = sorted({str(p["name"]) for p in found if p.get("name")})
+    if not names:
+        return {"team": team}
+    if not sys.stdin.isatty():
+        print("project: none, so each epic becomes its own Linear project "
+              "(run this command in a terminal to choose one, or set project under [linear])")
+        return {"team": team}
+    project = _choose("project", [("", "none: each epic becomes its own Linear project"),
+                                  *((name, f"{name}: all work goes here, epics are issues") for name in names)])
+    return {"team": team, **({"project": project} if project else {})}
 
 
 def _confirm_statuses(statuses: list[dict]) -> dict[str, str]:

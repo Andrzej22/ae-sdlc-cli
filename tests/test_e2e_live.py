@@ -1,6 +1,6 @@
 """Opt-in smoke run of the whole workflow on real trackers, with a scripted agent. It leaves its work there.
 
-Linear: LINEAR_API_KEY and AE_SDLC_LINEAR_LIVE_TEAM.
+Linear: LINEAR_API_KEY and AE_SDLC_LINEAR_LIVE_TEAM; AE_SDLC_LINEAR_LIVE_PROJECT also pins a project.
 Jira: Atlassian credentials, AE_SDLC_JIRA_LIVE_CLOUD_ID and AE_SDLC_JIRA_LIVE_PROJECT.
 Set AE_SDLC_E2E_METRICS_FILE to also append the run's evaluation metrics to a JSON Lines file.
 """
@@ -25,10 +25,11 @@ from ae_sdlc.work.runner import run_workflow
 from ae_sdlc.work.service import WorkService
 
 TEAM = os.environ.get("AE_SDLC_LINEAR_LIVE_TEAM")
+LINEAR_PROJECT = os.environ.get("AE_SDLC_LINEAR_LIVE_PROJECT")
 CLOUD = os.environ.get("AE_SDLC_JIRA_LIVE_CLOUD_ID")
 PROJECT = os.environ.get("AE_SDLC_JIRA_LIVE_PROJECT")
 TARGETS = {
-    "linear": (TEAM, LinearWorkBackend, {"team": TEAM}),
+    "linear": (TEAM, LinearWorkBackend, {"team": TEAM, **({"project": LINEAR_PROJECT} if LINEAR_PROJECT else {})}),
     "jira": (CLOUD and PROJECT, JiraWorkBackend, {
         "cloud_id": CLOUD, "project_key": PROJECT, "status_draft": "To Do", "status_ready": "To Do",
         "status_in_progress": "In Progress", "status_done": "Done", "status_blocked": "Blocked"}),

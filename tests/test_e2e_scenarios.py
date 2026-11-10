@@ -26,8 +26,8 @@ from ae_sdlc import backend_cli, cli, installer
 from ae_sdlc.work.config import read_config, set_backend, write_config
 from ae_sdlc.work.mcp.errors import AuthRejected, RateLimited, TransportFailure
 
-ALL = ["local", "linear", "jira"]
-REMOTE = ["linear", "jira"]
+ALL = ["local", "linear", "linear-project", "jira"]
+REMOTE = ["linear", "linear-project", "jira"]  # linear-project: [linear] project pins one Linear project
 OUTAGES = [(AuthRejected("rejected"), 7), (RateLimited("slow down"), 8), (TransportFailure("timed out"), 8)]
 COMPLETED = (0, {"status": "COMPLETED", "summary": "shipped", "blockers": []})
 CREATE_TOOL = {"linear": "save_issue", "jira": "createJiraIssue"}
@@ -46,6 +46,7 @@ class Rig:
 
     def __init__(self, name, project, fake, capsys, monkeypatch):
         self.name, self.project, self.fake, self.capsys, self.monkeypatch = name, project, fake, capsys, monkeypatch
+        self.backend = name.split("-")[0]
         self.agent_calls: list[str] = []
         self.prompts: dict[str, str] = {}
         self.results: dict[str, tuple] = {}
@@ -101,10 +102,10 @@ class Rig:
         if self.name == "local":
             return len(list((self.project / "docs" / "product").rglob("SPEC-*.md")))
         items = self.fake.issues.values()
-        return sum(1 for i in items if i.get("type") != "Epic")
+        return sum(1 for i in items if i.get("type") != "Epic" and "ae-sdlc-epic" not in i.get("labels", []))
 
     def status_writes(self) -> int:
-        if self.name == "linear":
+        if self.backend == "linear":
             return sum(1 for a in self.fake.writes("save_issue") if "state" in a)
         return len(self.fake.used("transitionJiraIssue"))
 
@@ -120,7 +121,7 @@ def remote(request, project, load_store, capsys, monkeypatch):
 
 
 def _rig(name, project, capsys, monkeypatch) -> Rig:
-    fake = {"local": lambda: None, "linear": FakeLinear, "jira": FakeJira}[name]()
+    fake = {"local": lambda: None, "linear": FakeLinear, "linear-project": FakeLinear, "jira": FakeJira}[name]()
     rig = Rig(name, project, fake, capsys, monkeypatch)
     adapter = types.SimpleNamespace(run=rig.agent, check_cli=lambda: None)
     if name == "local":
@@ -133,8 +134,11 @@ def _rig(name, project, capsys, monkeypatch) -> Rig:
         return rig
 
     config = read_config(project)
-    config["work"] = {"backend": name}
-    config[name] = {"team": "AND"} if name == "linear" else SETTINGS
+    config["work"] = {"backend": rig.backend}
+    config[rig.backend] = {"linear": {"team": "AND"}, "linear-project": {"team": "AND", "project": "Sandbox"},
+                           "jira": SETTINGS}[name]
+    if name == "linear-project":
+        fake.tool_save_project(name="Sandbox", addTeams=["AND"])
     write_config(project, config)
     real_call = fake.call
 
@@ -165,6 +169,10 @@ def test_01_to_03_prepare_creates_an_epic_with_a_child_spec(rig):
     if rig.name == "linear":
         assert [p["name"] for p in rig.fake.projects.values()] == ["Billing"]
         assert rig.fake.issues[spec_id]["projectId"] == next(iter(rig.fake.projects.values()))["uuid"]
+    elif rig.name == "linear-project":
+        assert [p["name"] for p in rig.fake.projects.values()] == ["Sandbox"]
+        assert "ae-sdlc-epic" in rig.fake.issues[epic_id]["labels"]
+        assert rig.fake.issues[spec_id]["parentId"] == rig.fake.issues[epic_id]["uuid"]
     elif rig.name == "jira":
         assert rig.fake.issues[epic_id]["type"] == "Epic" and rig.fake.issues[spec_id]["parent"] == epic_id
     else:
@@ -274,14 +282,14 @@ def test_13_and_14_tracker_failure_after_the_agent_is_recovered_without_a_rerun(
 
 
 def test_15_lost_create_response_does_not_duplicate(remote):
-    remote.fake.lose_response_of.add(CREATE_TOOL[remote.name])
+    remote.fake.lose_response_of.add(CREATE_TOOL[remote.backend])
     out = remote.publish(spec_doc({"title": "API"}, epic=False))
     assert remote.stored_specs() == 1 and out["specs"][0]["id"] in remote.fake.issues
 
 
 def test_16_lost_status_response_is_reconciled(remote):
     spec_id = remote.publish(spec_doc({"title": "API"}, epic=False))["specs"][0]["id"]
-    tool = TRANSITION_TOOL[remote.name]
+    tool = TRANSITION_TOOL[remote.backend]
     remote.during_agent[spec_id] = lambda: remote.fake.lose_response_of.add(tool)
     assert remote.workflow(spec_id) == 1
     writes = remote.status_writes()
@@ -327,10 +335,10 @@ def test_19_switching_backend_neither_migrates_nor_deletes(remote):
     owed = {"work_id": spec_id, "target_status": "DONE", "blocker": None, "allowed_from": ["IN_PROGRESS"], "comments": []}
     (pending / f"{spec_id}.json").write_text(json.dumps(owed), encoding="utf-8")
     calls_before = len(remote.fake.calls)
-    settings_before = read_config(project)[remote.name]
+    settings_before = read_config(project)[remote.backend]
 
     assert "Active backend: local" in _entrypoint(project, "backend", "use", "local").stdout
-    assert read_config(project)[remote.name] == settings_before
+    assert read_config(project)[remote.backend] == settings_before
     assert "No matching durable work" in _entrypoint(project, "status").stdout
     doc = spec_doc({"title": "Local"}, epic=False)
     rc, out = local_work(project, "publish", "--json-stdin", stdin=json.dumps(doc))
@@ -341,7 +349,7 @@ def test_19_switching_backend_neither_migrates_nor_deletes(remote):
     assert (pending / f"{spec_id}.json").exists()
     assert len(remote.fake.calls) == calls_before and remote.fake.issues == tracker
 
-    set_backend(project, remote.name)
+    set_backend(project, remote.backend)
     assert remote.get(spec_id)["title"] == "Remote" and remote.stored_specs() == 1
     assert local_path.exists() and remote.fake.issues.keys() == tracker.keys()
 

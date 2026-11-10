@@ -84,6 +84,11 @@ def _probe_linear(client: McpClient, settings: Mapping[str, str], probe: _Probe)
     probe.run("live: status mapping",
               lambda: build_status_mapping(rows(read("list_issue_statuses", team=team), "statuses", "nodes"), settings),
               lambda mapping: mapping.describe())
+    if project := settings.get("project"):
+        probe.run("live: pinned project", lambda: read("get_project", query=project),
+                  lambda row: f"{project}: epics are issues labelled ae-sdlc-epic, specs their sub-issues")
+    else:
+        probe.checks.append(Check("pinned project", OK, "none: each epic becomes its own Linear project"))
     listed = probe.run("live: project access", lambda: read("list_issues", team=team, limit=1))
     if listed is None:
         probe.skip("live: comments", "live: relationships", reason="project access failed")
@@ -141,7 +146,8 @@ def run_doctor(provider: str, settings: Mapping[str, str], env: Mapping[str, str
         checks.append(Check("configuration", MISSING, f"{', '.join(missing)} not set; "
                                                       f"run ./ae-sdlc backend connect {provider}"))
         return checks
-    checks.append(Check("configuration", OK, ", ".join(f"{k}={settings[k]}" for k in _SETTINGS[provider])))
+    shown = [*_SETTINGS[provider], *(["project"] if provider == "linear" and settings.get("project") else [])]
+    checks.append(Check("configuration", OK, ", ".join(f"{k}={settings[k]}" for k in shown)))
     try:
         credential = auth.resolve(provider, env)
         url = provider_endpoint(provider, env)

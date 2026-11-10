@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import stat
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -232,6 +234,36 @@ def test_set_backend_preserves_provider_settings(tmp_path):
     assert read_config(tmp_path)["linear"]["team"] == 'A "quoted" team'
 
 
+PLAN_EXAMPLE = """[work]
+backend = "local"
+
+[work.linear]
+team = "ENG"
+
+[work.context]
+max_related_items = 5
+max_comments_per_item = 20
+
+[work.execution]
+update_status = true
+read_comments = true
+allow_related_comments = true
+"""
+
+
+def test_backend_switch_keeps_nested_tables_and_non_string_values(project):
+    """The example configuration in docs/Implementation_Plan.md used to make every rewrite fail."""
+    import tomllib
+    cfg = project / ".ae-sdlc" / "work.toml"
+    cfg.write_text(PLAN_EXAMPLE + '\n[linear]\nteam = "Core"\nlimits = [1, 2.5]\nsince = 2026-11-10\n'
+                   '"odd key" = { nested = "x" }\n', encoding="utf-8")
+    before = tomllib.loads(cfg.read_text(encoding="utf-8"))
+    p = run_entry(project, "backend", "use", "local")
+    assert p.returncode == 0, p.stderr
+    after = tomllib.loads(cfg.read_text(encoding="utf-8"))
+    assert after == before
+
+
 def test_render_toml_round_trips_unicode():
     import tomllib
     data = {"t": {"k": "Команда\n\\ 🚀"}}
@@ -270,7 +302,7 @@ def test_rows_unwraps_bare_keyed_and_enveloped_responses():
 
 # --- doctor against a server with Linear's tool names ---
 
-def linear_tools(issues=True):
+def linear_tools(issues=True, projects=()):
     def get_issue(id: str, includeRelations: bool = False) -> str:
         return json.dumps({"id": id})
 
@@ -288,10 +320,12 @@ def linear_tools(issues=True):
                            {"name": "Doing", "type": "started"}, {"name": "Done", "type": "completed"}])
 
     def get_project(query: str) -> str:
-        return json.dumps({"id": query})
+        if query not in projects:
+            raise ValueError(f"Entity not found: Project {query}")
+        return json.dumps({"id": query, "name": query})
 
-    def list_projects(team: str) -> str:
-        return json.dumps({"projects": []})
+    def list_projects(team: str, limit: int = 50) -> str:
+        return json.dumps({"projects": [{"id": f"P-{i}", "name": name} for i, name in enumerate(projects)]})
 
     def get_team(query: str) -> str:
         return json.dumps({"id": query})
@@ -369,6 +403,15 @@ def test_doctor_skips_issue_checks_on_empty_team(tmp_path):
     assert by_name(checks)["live: comments"].state == SKIPPED and healthy(checks)
 
 
+def test_doctor_checks_a_pinned_project(tmp_path):
+    with serve(linear_tools(projects=["Sandbox"])) as (url, _):
+        pinned = run_doctor("linear", {"team": "Core", "project": "Sandbox"}, linear_env(url, tmp_path))
+        missing = run_doctor("linear", {"team": "Core", "project": "Gone"}, linear_env(url, tmp_path))
+    assert healthy(pinned) and by_name(pinned)["live: pinned project"].state == "OK"
+    assert "project=Sandbox" in by_name(pinned)["configuration"].detail
+    assert not healthy(missing) and by_name(missing)["live: pinned project"].state == "ERROR"
+
+
 def test_doctor_without_settings_points_to_connect(tmp_path):
     checks = run_doctor("linear", {}, {})
     assert checks[0].state == MISSING and "backend connect linear" in checks[0].detail
@@ -400,6 +443,23 @@ def test_connect_discovers_team_and_stores_settings_not_secrets(tmp_path, monkey
     assert SECRET not in (tmp_path / ".ae-sdlc" / "work.toml").read_text()
     assert stat.S_IMODE(cred_file.stat().st_mode) == 0o600
     assert SECRET not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("terminal, answer, expected", [
+    (True, "3", {"team": "Core", "project": "Sandbox"}),  # listed alphabetically after "none" and "Other"
+    (True, "1", {"team": "Core"}),
+    (False, None, {"team": "Core"}),
+], ids=["choose-project", "choose-none", "no-terminal"])
+def test_connect_offers_the_team_projects(tmp_path, monkeypatch, capsys, terminal, answer, expected):
+    (tmp_path / ".ae-sdlc").mkdir()
+    with serve(linear_tools(projects=["Sandbox", "Other"])) as (url, _):
+        monkeypatch.setenv("AE_SDLC_LINEAR_MCP_URL", url)
+        monkeypatch.setenv("AE_SDLC_CREDENTIALS_FILE", str(tmp_path / "none"))
+        monkeypatch.setenv("LINEAR_API_KEY", SECRET)
+        monkeypatch.setattr(sys, "stdin", type("T", (), {"isatty": staticmethod(lambda: terminal)})())
+        monkeypatch.setattr("builtins.input", lambda _: answer)
+        assert backend_cli.run(tmp_path, "connect", "linear") == 0
+    assert read_config(tmp_path)["linear"] == expected
 
 
 def test_connect_with_rejected_credential_stores_nothing(tmp_path, monkeypatch, capsys):
@@ -471,3 +531,46 @@ def test_a_connection_that_never_answers_fails_within_the_timeout():
                      retries=0)
     with pytest.raises(TransportFailure, match="no response within"):
         client._ensure_connected()
+
+
+# --- interactive prepare-work / execute-work keep tracker access without exposing the secret ---
+
+CREDENTIAL_PROBE_AGENT = """#!/bin/sh
+file="$AE_SDLC_CREDENTIALS_FILE"
+echo "$file" > "$PWD/seen-path"
+leak=no; [ -n "$LINEAR_API_KEY" ] && leak=yes
+found=no; [ -n "$file" ] && grep -q 'api_key = "secret-key"' "$file" && found=yes
+mode=none; [ -n "$file" ] && mode=$(stat -c %a "$file")
+printf '{"is_error": false, "structured_output": {"status": "COMPLETED", "summary": "leak=%s found=%s mode=%s", "blockers": []}}' "$leak" "$found" "$mode"
+"""
+
+
+def _run_agent_command(project, tmp_path, backend_toml, extra_env):
+    stubs = tmp_path / "agent-bin"
+    stubs.mkdir()
+    agent = stubs / "claude"
+    agent.write_text(CREDENTIAL_PROBE_AGENT, encoding="utf-8")
+    agent.chmod(0o755)
+    (project / ".ae-sdlc" / "work.toml").write_text(backend_toml, encoding="utf-8")
+    env = {"PATH": f"{stubs}{os.pathsep}{os.environ['PATH']}", "HOME": str(tmp_path), **extra_env}
+    p = run_entry(project, "--provider", "claude", "execute-work", "AND-1", env=env)
+    assert p.returncode == 0, p.stdout + p.stderr
+    return json.loads(p.stdout)["summary"], (project / "seen-path").read_text().strip()
+
+
+def test_execute_work_moves_env_credentials_to_a_private_file_for_work_commands(project, tmp_path):
+    summary, path = _run_agent_command(project, tmp_path, '[work]\nbackend = "linear"\n\n[linear]\nteam = "T"\n',
+                                       {"LINEAR_API_KEY": "secret-key"})
+    assert summary == "leak=no found=yes mode=600"
+    assert path and not Path(path).exists(), "the temporary file is removed when the agent finishes"
+
+
+def test_execute_work_keeps_the_users_credentials_file_without_env_credentials(project, tmp_path):
+    summary, path = _run_agent_command(project, tmp_path, '[work]\nbackend = "linear"\n\n[linear]\nteam = "T"\n',
+                                       {"AE_SDLC_CREDENTIALS_FILE": "/home/me/creds.toml"})
+    assert path == "/home/me/creds.toml" and summary.startswith("leak=no")
+
+
+def test_local_execute_work_only_removes_tracker_credentials(project, tmp_path):
+    summary, path = _run_agent_command(project, tmp_path, '[work]\nbackend = "local"\n', {"LINEAR_API_KEY": "secret-key"})
+    assert (summary, path) == ("leak=no found=no mode=none", "")

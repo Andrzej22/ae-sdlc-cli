@@ -141,15 +141,17 @@ def main() -> int:
         return run_workflow.main(argv)
 
     if a.cmd in {"prepare-work", "execute-work"}:
-        providers.remove_tracker_credentials_from_env()
-
-    if a.cmd == "prepare-work":
-        return run_agent(a.provider, "prepare-work", " ".join(a.request), providers.PREPARE_TAIL,
-                         schemas / "prepare-result.schema.json", a.model)
-
-    if a.cmd == "execute-work":
-        return run_agent(a.provider, "execute-work", " ".join(a.refs), providers.EXECUTE_TAIL,
-                         schemas / "execute-result.schema.json", a.model)
+        try:
+            active = backend_name(ROOT)
+        except WorkBackendError as exc:
+            raise SystemExit(str(exc))
+        # The agent's own ./ae-sdlc work calls need the tracker; the agent must not see the secret.
+        with providers.credentials_for_agent_work_commands(active):
+            if a.cmd == "prepare-work":
+                return run_agent(a.provider, "prepare-work", " ".join(a.request), providers.PREPARE_TAIL,
+                                 schemas / "prepare-result.schema.json", a.model)
+            return run_agent(a.provider, "execute-work", " ".join(a.refs), providers.EXECUTE_TAIL,
+                             schemas / "execute-result.schema.json", a.model)
 
     if a.cmd == "status":
         only = "READY" if a.ready else "BLOCKED" if a.blocked else None
