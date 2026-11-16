@@ -133,7 +133,7 @@ def test_frontmatter_roundtrip_is_stable_and_orders_keys(project, load_store):
     p.write_text(once)
     meta2, body2 = ws.parse_frontmatter(p)
     assert ws.render_frontmatter(meta2, body2) == once
-    keys = [l.split(":")[0] for l in once.split("---")[1].strip().splitlines()]
+    keys = [line.split(":")[0] for line in once.split("---")[1].strip().splitlines()]
     assert keys == ["artifact_type", "work_item_id", "title", "status", "epic",
                     "source_of_truth", "dependencies"]
 
@@ -151,8 +151,8 @@ def test_summary_lines_grouping_and_filters(project, load_store):
     write_spec(project, "SPEC-002", epic="EPIC-001", status="BLOCKED", extra="blocker: why")
     s = load_store.WorkStore(project)
     out = s.summary_lines("EPIC-001")
-    assert [l for l in out if not l.startswith(" ")] == ["READY", "IN_PROGRESS", "BLOCKED"]  # fixed display order
-    assert any("blocker=why" in l for l in out)
+    assert [line for line in out if not line.startswith(" ")] == ["READY", "IN_PROGRESS", "BLOCKED"]  # fixed display order
+    assert any("blocker=why" in line for line in out)
     assert s.summary_lines(only_status="DONE") == ["No matching durable work found."]
     assert s.summary_lines("NOPE") == ["No matching durable work found."]
 

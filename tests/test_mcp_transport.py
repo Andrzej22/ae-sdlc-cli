@@ -17,7 +17,7 @@ from ae_sdlc.work.config import backend_name, read_config, render_toml, set_back
 from ae_sdlc.work.mcp import auth
 from ae_sdlc.work.mcp.capabilities import invoke, is_available, operation, operations
 from ae_sdlc.work.mcp.client import McpClient, provider_endpoint
-from ae_sdlc.work.mcp.doctor import DENIED, MISSING, OK, SKIPPED, healthy, run_doctor
+from ae_sdlc.work.mcp.doctor import DENIED, MISSING, SKIPPED, healthy, run_doctor
 from ae_sdlc.work.mcp.errors import (AuthRejected, CredentialsMissing, InvalidResponse, PermissionDenied, RateLimited,
                                      ToolFailed, TransportFailure, failure_from_tool, parse_payload)
 from conftest import run_entry

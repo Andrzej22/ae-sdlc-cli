@@ -10,7 +10,6 @@ is written next to it as ``<file>.ae_sdlc`` and reported.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 

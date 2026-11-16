@@ -1,5 +1,7 @@
 # ae-sdlc
 
+[![CI](https://github.com/Andrzej22/ae-sdlc-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Andrzej22/ae-sdlc-cli/actions/workflows/ci.yml)
+
 A small Python CLI that installs a spec-driven workflow for coding agents into an existing repository.
 
 It separates two steps that agents usually blur together:
@@ -173,8 +175,14 @@ thrown away.
 ## Development
 
 ```bash
-uv run --with pytest pytest          # live Linear/Jira tests are opt-in, see tests/test_e2e_live.py
+uv sync                              # installs the package plus the dev group (pytest, ruff)
+uv run pytest                        # live Linear/Jira tests are opt-in, see tests/test_e2e_live.py
+uv run ruff check .
 ```
+
+CI (`.github/workflows/ci.yml`) runs ruff, the test suite on Python 3.11-3.13 (Linux) and 3.13 (macOS),
+and an install smoke test: `ae-sdlc init --providers all` in a fresh repository, `./ae-sdlc validate`,
+and a check that an unattended run refuses to start without a sandbox. Live tracker tests do not run in CI.
 
 Layout: `src/ae_sdlc/` is the installer and the remote-backend code. `src/ae_sdlc/data/core` holds the
 shared runtime, docs and schemas copied into projects. `src/ae_sdlc/data/providers/<name>` holds

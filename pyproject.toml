@@ -16,6 +16,22 @@ ae-sdlc = "ae_sdlc.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/ae_sdlc"]
 
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.14"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+extend-exclude = ["harness"]  # legacy per-provider copies, to be removed
+
+[tool.ruff.lint]
+# Explicit, so a ruff upgrade does not silently change what CI enforces.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# Installed scripts bootstrap sys.path before importing their siblings.
+"src/ae_sdlc/data/core/scripts/ae-sdlc/*.py" = ["E402"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "tests"]

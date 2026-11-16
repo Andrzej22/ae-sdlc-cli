@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - run: uv sync --locked
+      - run: uv run ruff check .
+
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.11", "3.12", "3.13"]
+        include:
+          - os: macos-latest
+            python: "3.13"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked
+      # Live Linear/Jira tests skip themselves: no tracker secrets are configured in CI.
+      - run: uv run pytest -q -ra
+
+  install-smoke:
+    # Installs the harness into a fresh repository the way a user would and validates it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - run: uv tool install .
+      - name: init + validate in a fresh project
+        run: |
+          set -euo pipefail
+          project="$RUNNER_TEMP/project"
+          mkdir "$project" && cd "$project" && git init -q
+          ae-sdlc init --providers all
+          ./ae-sdlc validate
+          ./ae-sdlc status
+      - name: unattended run refuses to start without a sandbox
+        run: |
+          cd "$RUNNER_TEMP/project"
+          if ./ae-sdlc --provider claude workflow nightly EPIC-001 2> err.txt; then
+            echo "expected the sandbox gate to refuse"; exit 1
+          fi
+          grep -q "outside a sandbox" err.txt
