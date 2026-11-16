@@ -540,7 +540,7 @@ file="$AE_SDLC_CREDENTIALS_FILE"
 echo "$file" > "$PWD/seen-path"
 leak=no; [ -n "$LINEAR_API_KEY" ] && leak=yes
 found=no; [ -n "$file" ] && grep -q 'api_key = "secret-key"' "$file" && found=yes
-mode=none; [ -n "$file" ] && mode=$(stat -c %a "$file")
+mode=none; [ -n "$file" ] && mode=$(stat -c %a "$file" 2>/dev/null || stat -f %Lp "$file")  # GNU, then BSD/macOS
 printf '{"is_error": false, "structured_output": {"status": "COMPLETED", "summary": "leak=%s found=%s mode=%s", "blockers": []}}' "$leak" "$found" "$mode"
 """
 
