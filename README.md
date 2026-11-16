@@ -168,8 +168,13 @@ thrown away.
 - Python 3.11+, standard library for the installed runtime; `hatchling` build
 - [`mcp`](https://pypi.org/project/mcp/) Python SDK (streamable HTTP) and `httpx2` for Linear and Jira
 - Agent CLIs driven as subprocesses in headless mode. Claude Code, Codex and Antigravity enforce the
-  result JSON schema in the CLI. Cursor and opencode get the schema in the prompt. The runner marks a
-  spec `DONE` only on exit code 0 with status `COMPLETED`; anything else ends `BLOCKED`
+  result JSON schema in the CLI. Cursor and opencode get the schema in the prompt only
+- The runner does not trust the agent's report. It validates every result against the schema itself,
+  for every provider (`work/result.py`, standard library only). It also compares `changed_files` with
+  what really changed in the git working tree during the run (`work/worktree.py`). A spec becomes
+  `DONE` only on exit code 0, a valid `COMPLETED` result, a working tree that changed, and no claimed
+  file left unchanged. Anything else ends `BLOCKED`. Changes the agent did not list are recorded in the
+  run report under `verification`, but do not fail the run
 - `pytest`, with a fake MCP server for backend tests; `uv` / `pipx` for install
 
 ## Development
@@ -197,4 +202,9 @@ removed once parity is confirmed. Design notes and the backend plan are in `docs
   stop the same user). See [Security model](#security-model).
 - Jira needs a scoped API token or service-account key. OAuth is not automated.
 - Edits made to a spec while its agent runs are reported, not merged.
+- `changed_files` is checked only in a git working tree. Elsewhere the report says `"checked": false`.
+  The check confirms that files changed, not that the change is correct. It does not re-run the
+  agent's tests (`command_run`).
+- Validation of results applies to unattended runs. `./ae-sdlc work finish`, used by interactive
+  sessions, keeps its lighter check.
 - The runner lock uses `fcntl`, so it runs on Linux, macOS and WSL only. Native Windows is not supported.

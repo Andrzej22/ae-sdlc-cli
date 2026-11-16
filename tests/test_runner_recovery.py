@@ -6,7 +6,7 @@ import types
 
 import pytest
 
-from conftest import write_spec
+from conftest import agent_result, write_spec
 
 
 class Unavailable(Exception):
@@ -72,7 +72,7 @@ def rig(project, load_store, monkeypatch):
     def fake_run(skill, args, tail, schema, model, background=False):
         calls.append(args)
         tails[args] = tail
-        return script.get(args, (0, {"status": "COMPLETED", "summary": "shipped", "blockers": []}))
+        return script.get(args, (0, agent_result("COMPLETED", summary="shipped")))
 
     adapter = types.SimpleNamespace(run=fake_run, check_cli=lambda: None)
     monkeypatch.setattr(providers, "resolve", lambda n=None: "fake")
@@ -111,7 +111,7 @@ def test_comments_reach_the_agent_bounded_and_marked_untrusted(rig):
 def test_product_blocker_and_failure_are_distinguishable_but_both_blocked(rig):
     rig.tracker.add("ENG-1")
     rig.tracker.add("ENG-2")
-    rig.script["ENG-1"] = (0, {"status": "NEEDS_INPUT", "blockers": ["pick db"], "summary": ""})
+    rig.script["ENG-1"] = (0, agent_result("NEEDS_INPUT", blockers=["pick db"]))
     rig.script["ENG-2"] = (1, None)
     assert rig.main("ENG-1") == 0
     assert rig.main("ENG-2") == 1
@@ -123,7 +123,7 @@ def test_product_blocker_and_failure_are_distinguishable_but_both_blocked(rig):
 
 def test_failed_spec_is_not_run_again_without_a_requeue(rig):
     rig.tracker.add("ENG-1")
-    rig.script["ENG-1"] = (0, {"status": "FAILED", "blockers": ["boom"], "summary": ""})
+    rig.script["ENG-1"] = (0, agent_result("FAILED", blockers=["boom"]))
     rig.main("ENG-1")
     rig.main("ENG-1")
     assert rig.calls == ["ENG-1"]
@@ -178,11 +178,11 @@ def test_findings_reach_linked_items_only_and_are_not_duplicated(rig):
     rig.tracker.add("ENG-9")
     rig.tracker.add("ENG-8")
     rig.tracker.add("ENG-1", related_ids=["ENG-9"])
-    rig.script["ENG-1"] = (0, {"status": "COMPLETED", "summary": "done", "comments": [
+    rig.script["ENG-1"] = (0, agent_result("COMPLETED", summary="done", comments=[
         {"work_item_id": "ENG-9", "text": "API changed, update the client"},
         {"work_item_id": "ENG-9", "text": "API changed, update the client"},
         {"work_item_id": "ENG-8", "text": "unrelated"},
-        {"work_item_id": "ENG-1", "text": "   "}]})
+        {"work_item_id": "ENG-1", "text": "   "}]))
     assert rig.main("ENG-1") == 0
     assert [(p[0], p[1]) for p in rig.tracker.posted] == [("ENG-1", "**Completed:** done"), ("ENG-9", "API changed, update the client")]
     assert {d["reason"] for d in rig.report()["completed"][0]["dropped_comments"]} == {
@@ -245,7 +245,7 @@ def test_local_backend_completes_an_epic_and_posts_no_comments(project, load_sto
     import run_workflow
     monkeypatch.setattr(run_workflow, "ROOT", project)
     monkeypatch.setattr(run_workflow, "RUNTIME", project / ".ae-sdlc-runtime" / "runs")
-    adapter = types.SimpleNamespace(check_cli=lambda: None, run=lambda *a, **k: (0, {"status": "COMPLETED", "summary": "ok", "blockers": []}))
+    adapter = types.SimpleNamespace(check_cli=lambda: None, run=lambda *a, **k: (0, agent_result("COMPLETED", summary="ok")))
     monkeypatch.setattr(providers, "resolve", lambda n=None: "fake")
     monkeypatch.setattr(providers, "load", lambda n: adapter)
     write_spec(project, "EPIC-001", kind="epic")

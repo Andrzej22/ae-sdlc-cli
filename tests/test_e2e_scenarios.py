@@ -18,6 +18,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from conftest import agent_result
 from test_jira_backend import SETTINGS, FakeJira
 from test_linear_backend import FakeLinear
 from test_work_commands import BODY, work as local_work
@@ -29,7 +30,7 @@ from ae_sdlc.work.mcp.errors import AuthRejected, RateLimited, TransportFailure
 ALL = ["local", "linear", "linear-project", "jira"]
 REMOTE = ["linear", "linear-project", "jira"]  # linear-project: [linear] project pins one Linear project
 OUTAGES = [(AuthRejected("rejected"), 7), (RateLimited("slow down"), 8), (TransportFailure("timed out"), 8)]
-COMPLETED = (0, {"status": "COMPLETED", "summary": "shipped", "blockers": []})
+COMPLETED = (0, agent_result("COMPLETED", summary="shipped"))
 CREATE_TOOL = {"linear": "save_issue", "jira": "createJiraIssue"}
 TRANSITION_TOOL = {"linear": "save_issue", "jira": "transitionJiraIssue"}
 
@@ -209,7 +210,7 @@ def test_07_draft_work_cannot_execute(rig):
 
 def test_08_and_12_blocker_is_persisted_and_holds_until_resolved(rig):
     spec_id = rig.publish(spec_doc({"title": "API"}, epic=False))["specs"][0]["id"]
-    rig.results[spec_id] = (0, {"status": "NEEDS_INPUT", "summary": "", "blockers": ["pick a database"]})
+    rig.results[spec_id] = (0, agent_result("NEEDS_INPUT", blockers=["pick a database"]))
     assert rig.workflow(spec_id) == 0
     item = rig.get(spec_id)
     assert item["status"] == "BLOCKED" and item["blocker"] == "pick a database"
@@ -242,9 +243,9 @@ def test_11_agent_comments_on_a_linked_item_once(remote):
     out = remote.publish(spec_doc({"ref": "a", "title": "API"}, {"ref": "b", "title": "UI", "depends_on": ["a"]}))
     first, second = (s["id"] for s in out["specs"])
     finding = "The API now pages results; the client must follow the cursor"
-    remote.results[second] = (0, {"status": "COMPLETED", "summary": "shipped", "blockers": [], "comments": [
+    remote.results[second] = (0, agent_result("COMPLETED", summary="shipped", comments=[
         {"work_item_id": first, "text": finding}, {"work_item_id": first, "text": finding},
-        {"work_item_id": "OTHER-1", "text": "out of scope"}]})
+        {"work_item_id": "OTHER-1", "text": "out of scope"}]))
     assert remote.workflow(out["epic"]["id"]) == 0
     assert remote.comments(first).count(finding) == 1
     dropped = remote.report()["completed"][1]["dropped_comments"]
@@ -312,7 +313,7 @@ def test_17_edit_during_execution_is_reported(rig):
 def test_18_epic_completes_only_when_every_spec_is_done(rig):
     out = rig.publish(spec_doc({"ref": "a", "title": "API"}, {"ref": "b", "title": "UI"}))
     epic_id, first, second = out["epic"]["id"], out["specs"][0]["id"], out["specs"][1]["id"]
-    rig.results[second] = (0, {"status": "BLOCKED", "summary": "", "blockers": ["needs design"]})
+    rig.results[second] = (0, agent_result("BLOCKED", blockers=["needs design"]))
     assert rig.workflow(epic_id) == 0
     assert rig.status(first) == "DONE" and rig.status(second) == "BLOCKED" and rig.status(epic_id) != "DONE"
 
@@ -376,7 +377,8 @@ def test_20_every_installed_provider_runs_the_same_workflow(tmp_path, provider):
     stubs.mkdir()
     binary, body = AGENT_STUBS[provider]
     script = stubs / binary
-    script.write_text(f'#!/bin/sh\nRESULT=\'{{"status": "COMPLETED", "summary": "shipped", "blockers": []}}\'\n{body}\n', encoding="utf-8")
+    result = json.dumps(agent_result("COMPLETED", summary="shipped"))
+    script.write_text(f"#!/bin/sh\nRESULT='{result}'\n{body}\n", encoding="utf-8")
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
     env = {**os.environ, "PATH": f"{stubs}{os.pathsep}{os.environ['PATH']}"}
     proc = subprocess.run([sys.executable, "-I", str(project / "ae-sdlc"), "--provider", provider, "workflow", "nightly", spec_id],

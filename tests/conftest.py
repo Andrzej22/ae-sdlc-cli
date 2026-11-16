@@ -57,3 +57,9 @@ def load_store(project, monkeypatch):
 def declared_sandbox(monkeypatch):
     """Tests run fake agents, so they declare the sandbox the unattended runner requires."""
     monkeypatch.setenv("AE_SDLC_SANDBOX", "1")
+
+
+def agent_result(status: str = "COMPLETED", **fields) -> dict:
+    """A complete execute-work result, as the schema requires; `fields` override the empty defaults."""
+    return {"status": status, "work_items": [], "changed_files": [], "command_run": None, "blockers": [],
+            "summary": "", "comments": [], **fields}

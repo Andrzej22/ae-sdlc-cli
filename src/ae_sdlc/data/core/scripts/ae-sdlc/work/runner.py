@@ -21,7 +21,9 @@ from typing import Any, ContextManager
 from .backend import InvalidTransition, RevisionConflict, WorkBackendError, WorkItemNotFound
 from .config import atomic_write
 from .models import Status
+from . import worktree
 from .pending import PendingUpdates, runner_lock
+from .result import InvalidResult, failed_result, parse_execute_result, verify_changes
 from .service import ExecutionContext, FinishedExecution, WorkService, decide_outcome
 
 OpenService = Callable[[], ContextManager[WorkService]]
@@ -41,16 +43,6 @@ UNSANDBOXED_REFUSAL = (
     "  - accept the risk for this run with --allow-unsandboxed.\n"
     "See \"Security model\" in the ae-sdlc README."
 )
-
-
-def load_result(path: Path) -> dict:
-    try:
-        result = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        return {"status": "FAILED", "blockers": [f"invalid structured result: {exc}"], "summary": "Agent result could not be parsed."}
-    if not isinstance(result, dict):
-        return {"status": "FAILED", "blockers": ["the structured result is not an object"], "summary": ""}
-    return result
 
 
 def _summary_line(item: Any) -> str:
@@ -159,18 +151,27 @@ class _Run:
         specs = service.eligible_specs(self.settings.scope, status)
         return next((s for s in specs if s.id not in self.attempted and s.id not in owed), None)
 
-    def _launch(self, spec_id: str, context: ExecutionContext) -> tuple[int, dict]:
+    def _launch(self, spec_id: str, context: ExecutionContext) -> tuple[int, dict, dict | None]:
+        """Run the agent; return (exit code, validated result, verification report or None if it never ran)."""
         extra = render_context(context, self.settings.comment_chars)
         tail = f"{self.background_tail}\n\n{extra}" if extra else self.background_tail
-        output = self.run_dir / f"{spec_id}.json"
+        before = worktree.snapshot(self.root)
         try:
-            rc, result = self.adapter.run("execute-work", spec_id, tail, self.schema, self.settings.model, background=True)
+            rc, raw = self.adapter.run("execute-work", spec_id, tail, self.schema, self.settings.model, background=True)
         except OSError as exc:
-            return 126, {"status": "FAILED", "blockers": [f"{self.provider} could not start: {exc}"], "summary": ""}
-        if result is None:
-            return rc, {"status": "FAILED", "blockers": [f"{self.provider} exited {rc}"], "summary": "No structured result produced."}
-        output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        return rc, load_result(output)
+            return 126, failed_result(f"{self.provider} could not start: {exc}"), None
+        actual = worktree.changed_paths(self.root, before, worktree.snapshot(self.root))
+        if raw is None:
+            return rc, failed_result(f"{self.provider} exited {rc}", "No structured result produced."), None
+        # The raw output is kept as the agent sent it, for debugging a rejected result.
+        (self.run_dir / f"{spec_id}.json").write_text(json.dumps(raw, indent=2, ensure_ascii=False) + "\n",
+                                                      encoding="utf-8")
+        try:
+            result = parse_execute_result(raw)
+        except InvalidResult as exc:
+            return rc, failed_result(str(exc), "Agent result failed validation."), None
+        result, verification = verify_changes(result, actual, lambda p: worktree.is_ignored(self.root, p), self.root)
+        return rc, result, verification.report()
 
     def _settle(self, update: dict) -> tuple[list[dict], str | None]:
         """Apply a saved update; return (refused comments, error). On error the record stays."""
@@ -196,7 +197,7 @@ class _Run:
             self.report["remote_edits"].append({"id": claimed.id, "claimed_revision": claimed.revision, "current_revision": current})
             print(f"warning: {claimed.id} was edited while its agent ran; review the change against the result", file=sys.stderr)
 
-    def _finish(self, context: ExecutionContext, rc: int, result: dict) -> bool:
+    def _finish(self, context: ExecutionContext, rc: int, result: dict, verification: dict | None = None) -> bool:
         """Record the outcome and return whether the run may treat this spec as a success."""
         spec_id = context.item.id
         finished = decide_outcome(rc, result, f"{self.provider} exited {rc}")
@@ -220,6 +221,8 @@ class _Run:
             entry["summary"] = finished.detail
         else:
             entry |= {"reason": finished.detail, "outcome": result.get("status"), "exit_code": rc}
+        if verification is not None:
+            entry["verification"] = verification
         if dropped or refused:
             entry["dropped_comments"] = [*dropped, *refused]
         self.report[finished.disposition].append(entry)
@@ -250,8 +253,8 @@ class _Run:
                 if self.report["failed"] and not self.settings.continue_on_failure:
                     return
                 continue
-            rc, result = self._launch(spec.id, context)
-            succeeded = self._finish(context, rc, result)
+            rc, result, verification = self._launch(spec.id, context)
+            succeeded = self._finish(context, rc, result, verification)
             self.save_report()
             if not succeeded and not self.settings.continue_on_failure:
                 return

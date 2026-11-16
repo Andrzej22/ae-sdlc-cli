@@ -6,7 +6,7 @@ import types
 
 import pytest
 
-from conftest import write_spec
+from conftest import agent_result, write_spec
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def runner(project, load_store, monkeypatch):
         calls.append(args)
         assert skill == "execute-work" and background is True
         assert "runner_owns_status=true" in tail
-        return script.get(args, (0, {"status": "COMPLETED", "summary": "ok", "blockers": []}))
+        return script.get(args, (0, agent_result("COMPLETED", summary="ok")))
 
     adapter = types.SimpleNamespace(run=fake_run, check_cli=lambda: None)
     monkeypatch.setattr(providers, "resolve", lambda n=None: "fake")
@@ -65,7 +65,7 @@ def test_execution_report_written_under_runtime(runner, project, capsys):
 
 def test_blocked_and_needs_input_become_BLOCKED_with_blocker(runner, project, load_store):
     write_spec(project, "SPEC-001")
-    runner.script["SPEC-001"] = (0, {"status": "NEEDS_INPUT", "blockers": ["pick db"], "summary": ""})
+    runner.script["SPEC-001"] = (0, agent_result("NEEDS_INPUT", blockers=["pick db"]))
     assert runner.main(["nightly", "SPEC-001"]) == 0
     s = load_store.WorkStore(project).get("SPEC-001")
     assert s.status == "BLOCKED" and s.meta["blocker"] == "pick db"
@@ -74,14 +74,14 @@ def test_blocked_and_needs_input_become_BLOCKED_with_blocker(runner, project, lo
 def test_failed_result_is_BLOCKED_and_reported_as_failed(runner, project, load_store):
     """Decision D2, revisited in PR 6: the status is BLOCKED on every backend; the reason marks the failure."""
     write_spec(project, "SPEC-001")
-    runner.script["SPEC-001"] = (0, {"status": "FAILED", "blockers": ["boom"], "summary": ""})
+    runner.script["SPEC-001"] = (0, agent_result("FAILED", blockers=["boom"]))
     assert runner.main(["nightly", "SPEC-001"]) == 1
     assert status_of(project, load_store, "SPEC-001") == "BLOCKED"
 
 
 def test_completed_with_nonzero_exit_is_not_done(runner, project, load_store):
     write_spec(project, "SPEC-001")
-    runner.script["SPEC-001"] = (3, {"status": "COMPLETED", "blockers": [], "summary": "x"})
+    runner.script["SPEC-001"] = (3, agent_result("COMPLETED", summary="x"))
     assert runner.main(["nightly", "SPEC-001"]) == 1
     assert status_of(project, load_store, "SPEC-001") == "BLOCKED"
 
@@ -107,7 +107,7 @@ def test_continue_on_failure_false_stops_run(runner, project):
     write_spec(project, "EPIC-001", kind="epic")
     write_spec(project, "SPEC-001", epic="EPIC-001")
     write_spec(project, "SPEC-002", epic="EPIC-001")
-    runner.script["SPEC-001"] = (0, {"status": "BLOCKED", "blockers": ["x"], "summary": ""})
+    runner.script["SPEC-001"] = (0, agent_result("BLOCKED", blockers=["x"]))
     runner.main(["nightly", "EPIC-001"])
     assert runner.calls == ["SPEC-001"]
 

@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from conftest import write_spec
+from conftest import agent_result, write_spec
 from test_linear_backend import FakeLinear
 
 from ae_sdlc import backend_cli, cli, installer
@@ -462,7 +462,7 @@ def test_remote_workflow_runs_agents_without_tracker_credentials(linear, capsys,
 
     def fake_agent(skill, args, tail, schema, model, background=False):
         seen.append((args, tail, os.environ.get("LINEAR_API_KEY")))
-        return 0, {"status": "COMPLETED", "summary": "shipped", "blockers": []}
+        return 0, agent_result("COMPLETED", summary="shipped")
 
     adapter = types.SimpleNamespace(run=fake_agent, check_cli=lambda: None)
     providers = types.SimpleNamespace(resolve=lambda name=None: "fake", load=lambda name: adapter, BACKGROUND_TAIL="runner_owns_status=true",

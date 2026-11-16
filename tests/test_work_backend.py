@@ -7,7 +7,7 @@ import types
 
 import pytest
 
-from conftest import run_entry, write_spec
+from conftest import agent_result, run_entry, write_spec
 
 
 @pytest.fixture
@@ -253,7 +253,7 @@ def test_runner_accepts_an_injected_backend(project, load_store, monkeypatch):
     monkeypatch.setattr(run_workflow, "ROOT", project)
     monkeypatch.setattr(run_workflow, "RUNTIME", project / ".ae-sdlc-runtime/runs")
     adapter = types.SimpleNamespace(check_cli=lambda: None,
-                                    run=lambda *a, **k: (0, {"status": "COMPLETED", "summary": "ok"}))
+                                    run=lambda *a, **k: (0, agent_result("COMPLETED", summary="ok")))
     monkeypatch.setattr(providers, "resolve", lambda n=None: "fake")
     monkeypatch.setattr(providers, "load", lambda n: adapter)
     fake = FakeBackend(models, [models.WorkItem("ENG-1", "spec", "T", "", "READY")])
