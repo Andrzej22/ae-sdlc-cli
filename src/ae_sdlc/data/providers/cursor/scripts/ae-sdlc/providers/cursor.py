@@ -71,6 +71,13 @@ def run(skill: str, args: str, tail: str, schema: Path, model: str | None,
         "Satisfy this JSON schema exactly as the final response:\n"
         f"{schema.read_text(encoding='utf-8')}\n"
     )
+    # SECURITY: deliberately permissive defaults - adjust for your environment.
+    # The project ships without execution restrictions on purpose: the agent runs as your
+    # user, can run arbitrary shell commands and can read any file you can (including the
+    # tracker credentials file). Unattended runs refuse to start outside a declared
+    # sandbox (see "Security model" in the project README).
+    # Here: --force --trust --sandbox disabled turns off Cursor's own sandbox and approval
+    # prompts. Re-enable --sandbox and restrict .cursor/cli.json permissions if needed.
     cmd = agent_cmd() + [
         "-p", "--force", "--trust",
         "--sandbox", "disabled",

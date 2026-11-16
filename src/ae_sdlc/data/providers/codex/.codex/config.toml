@@ -1,4 +1,8 @@
 # Thin repo-local Codex configuration.
+# SECURITY: deliberately permissive defaults - adjust for your environment.
+# "project-edit" allows writes anywhere in the workspace and opens the network. The deny globs below
+# only cover common secret file names; they are not an isolation boundary. Tighten this profile (or
+# run unattended workflows in a sandbox) before relying on it. See "Security model" in the README.
 default_permissions = "project-edit"
 
 [permissions.project-edit]

@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
 import tomllib
@@ -30,6 +31,16 @@ DEFAULT_COMMENT_CHARS = 2000
 _MAX_FINDINGS = 5
 _MAX_FINDING_CHARS = 4000
 _MAX_LISTED_FILES = 20
+
+SANDBOX_ENV = "AE_SDLC_SANDBOX"
+UNSANDBOXED_REFUSAL = (
+    "Refusing to start an unattended run outside a sandbox.\n"
+    "The agent adapters run with permissive execution modes: the agent can run any shell command and read\n"
+    "any file your user can, including the tracker credentials file. Either:\n"
+    f"  - run inside a container/VM that only sees this checkout, and set {SANDBOX_ENV}=1 there, or\n"
+    "  - accept the risk for this run with --allow-unsandboxed.\n"
+    "See \"Security model\" in the ae-sdlc README."
+)
 
 
 def load_result(path: Path) -> dict:
@@ -311,6 +322,8 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     ap.add_argument("--model")
     ap.add_argument("--max-specs", type=int)
     ap.add_argument("--provider")
+    ap.add_argument("--allow-unsandboxed", action="store_true",
+                    help=f"run without a declared sandbox ({SANDBOX_ENV}=1); the agent can reach your secrets")
     return ap.parse_args(argv)
 
 
@@ -330,9 +343,25 @@ def _execute(run: _Run) -> int:
     return 1 if run.report["failed"] or run.report["error"] or run.report["pending_updates_total"] else 0
 
 
+def sandbox_mode(allow_unsandboxed: bool) -> str:
+    """Fail closed: an unattended run needs a declared sandbox or an explicit, per-run opt-out.
+
+    The declaration is trusted, not verified - setting the variable is the operator's statement that the
+    process cannot reach secrets or systems outside this checkout.
+    """
+    if os.environ.get(SANDBOX_ENV) == "1":
+        return "declared"
+    if allow_unsandboxed:
+        return "unsandboxed"
+    raise SystemExit(UNSANDBOXED_REFUSAL)
+
+
 def run_workflow(root: Path, argv: list[str] | None, providers: ModuleType, open_service: OpenService,
                  runs_dir: Path | None = None, schema: Path | None = None) -> int:
     args = _parse(argv)
+    sandbox = sandbox_mode(args.allow_unsandboxed)
+    if sandbox == "unsandboxed":
+        print("warning: running unattended agents without a sandbox (--allow-unsandboxed)", file=sys.stderr)
     provider = providers.resolve(args.provider)
     adapter = providers.load(provider)
     adapter.check_cli()
@@ -342,7 +371,8 @@ def run_workflow(root: Path, argv: list[str] | None, providers: ModuleType, open
             with open_service() as service:
                 service.backend.get(settings.scope)
             stamp, run_dir = _new_run_dir(runs_dir or root / ".ae-sdlc-runtime" / "runs", settings.workflow)
-            report = {"workflow": settings.workflow, "scope": settings.scope, "started_at": stamp, "completed": [],
+            report = {"workflow": settings.workflow, "scope": settings.scope, "started_at": stamp, "sandbox": sandbox,
+                      "completed": [],
                       "blocked": [], "failed": [], "skipped": [], "pending_updates": [], "remote_edits": [], "error": None}
             return _execute(_Run(root, settings, open_service, adapter, provider, providers.BACKGROUND_TAIL,
                                  schema or root / ".ae-sdlc" / "schemas" / "execute-result.schema.json",

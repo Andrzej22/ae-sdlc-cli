@@ -69,7 +69,7 @@ In Linear, `status_<canonical>` in `[linear]` pins a state by name. A canceled L
 
 ## Comments
 
-Before a spec starts, its newest comments are given to the agent as untrusted data; `[comments]` in the workflow file sets `limit` and `max_chars`. In a headless run the agent has no tracker credentials: it returns findings in its result, and the runner posts them only to the spec, its epic or items linked to it, at most 5 per run, with a stable key that prevents duplicates. Dropped findings are listed in the run report. A completed spec receives one summary comment.
+Before a spec starts, its newest comments are given to the agent as untrusted data; `[comments]` in the workflow file sets `limit` and `max_chars`. In a headless run the agent gets no tracker credentials in its environment and is told not to call the tracker (unless it runs in a sandbox, it can still read the credentials file, see the README's security model): it returns findings in its result, and the runner posts them only to the spec, its epic or items linked to it, at most 5 per run, with a stable key that prevents duplicates. Dropped findings are listed in the run report. A completed spec receives one summary comment.
 
 ## Headless usage
 
@@ -78,7 +78,7 @@ export LINEAR_API_KEY=...
 ./ae-sdlc --provider claude workflow nightly ENG-PROJECT --max-specs 5
 ```
 
-A `workflow` run starts one fresh agent per eligible spec, in dependency order, and writes `.ae-sdlc-runtime/runs/<run>/report.json`. It exits non-zero if a spec failed, the tracker failed, or an update is still owed. `LINEAR_*` and `ATLASSIAN_*` are removed from the agent's environment. A lock allows one runner per checkout.
+A `workflow` run starts one fresh agent per eligible spec, in dependency order, and writes `.ae-sdlc-runtime/runs/<run>/report.json`. It exits non-zero if a spec failed, the tracker failed, or an update is still owed. `LINEAR_*` and `ATLASSIAN_*` are removed from the agent's environment. A lock allows one runner per checkout. The runner refuses to start unless `AE_SDLC_SANDBOX=1` declares a sandbox or `--allow-unsandboxed` is passed for that run.
 
 ## Recovery
 

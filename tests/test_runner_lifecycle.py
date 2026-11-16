@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import sys
 import types
 
 import pytest
@@ -134,3 +133,34 @@ def test_in_progress_spec_is_not_rerun(runner, project):
     write_spec(project, "SPEC-001", status="IN_PROGRESS")
     runner.main(["nightly", "SPEC-001"])
     assert runner.calls == []
+
+
+def test_refuses_unattended_run_without_a_declared_sandbox(runner, project, load_store, monkeypatch):
+    monkeypatch.delenv("AE_SDLC_SANDBOX")
+    write_spec(project, "SPEC-001")
+    with pytest.raises(SystemExit, match="outside a sandbox"):
+        runner.main(["nightly", "SPEC-001"])
+    assert runner.calls == []  # fail closed: no agent started, nothing claimed
+    assert status_of(project, load_store, "SPEC-001") == "READY"
+
+
+def test_explicit_opt_out_runs_and_is_recorded_in_the_report(runner, project, monkeypatch, capsys):
+    monkeypatch.delenv("AE_SDLC_SANDBOX")
+    write_spec(project, "SPEC-001")
+    assert runner.main(["nightly", "SPEC-001", "--allow-unsandboxed"]) == 0
+    assert "without a sandbox" in capsys.readouterr().err
+    report = next((project / ".ae-sdlc-runtime" / "runs").glob("*-nightly/report.json"))
+    assert json.loads(report.read_text())["sandbox"] == "unsandboxed"
+
+
+def test_entrypoint_passes_the_opt_out_flag_through(project, monkeypatch):
+    from conftest import run_entry
+    import os
+    write_spec(project, "SPEC-001", status="DRAFT")
+    env = {k: v for k, v in os.environ.items() if k != "AE_SDLC_SANDBOX"}
+    refused = run_entry(project, "--provider", "claude", "workflow", "nightly", "SPEC-001", env=env)
+    assert refused.returncode != 0 and "outside a sandbox" in refused.stderr
+    env["PATH"] = ""  # no agent CLI: getting past the gate surfaces as a missing-CLI error instead
+    allowed = run_entry(project, "--provider", "claude", "workflow", "nightly", "SPEC-001",
+                        "--allow-unsandboxed", env=env)
+    assert "outside a sandbox" not in allowed.stderr and "CLI not found" in allowed.stderr

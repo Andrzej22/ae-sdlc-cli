@@ -22,3 +22,5 @@ The runner owns scheduling and status transitions. It loads artifact metadata in
 Do not manually loop over specs in the current model session when the user explicitly requested the background workflow.
 
 The bundled workflow intentionally has no automatic verification/review/quality phase.
+
+The runner refuses to start unless `AE_SDLC_SANDBOX=1` is set (the operator declares a sandbox) or the user passes `--allow-unsandboxed`. If it refuses, report that to the user. Never add `--allow-unsandboxed` yourself.

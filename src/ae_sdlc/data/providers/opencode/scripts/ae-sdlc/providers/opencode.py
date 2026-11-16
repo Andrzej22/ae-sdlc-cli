@@ -21,6 +21,7 @@ _SECRETS = {
     "**/service-account.json": "deny",
 }
 
+# SECURITY: deliberately permissive (allow-all bash + denylist) - adjust for your environment.
 # Matches the interactive opencode.json permission rules, but in background
 # mode destructive commands become hard denials and subagents/web tools are off.
 RUNNER_PERMISSION = {
@@ -78,6 +79,13 @@ def run(skill: str, args: str, tail: str, schema: Path, model: str | None,
     """One fresh headless opencode run of the `skill` command; returns (exit code, structured result)."""
     check_cli()
     prompt = f"{args}\n\n{tail}\n\nOutput schema:\n{schema.read_text(encoding='utf-8')}"
+    # SECURITY: deliberately permissive defaults - adjust for your environment.
+    # The project ships without execution restrictions on purpose: the agent runs as your
+    # user, can run arbitrary shell commands and can read any file you can (including the
+    # tracker credentials file). Unattended runs refuse to start outside a declared
+    # sandbox (see "Security model" in the project README).
+    # Here: --auto approves tool calls; RUNNER_PERMISSION allows any bash command except a
+    # short denylist. A denylist is not a boundary - switch "*" to "ask"/"deny" and allowlist.
     cmd = ["opencode", "run", "--command", skill, prompt, "--format", "json", "--auto"]
     if model:
         cmd += ["--model", model]

@@ -114,12 +114,60 @@ docs/project-memory/        constraints, glossary, decisions, lessons shared acr
 The `prepare-work` skill also uses two bundled design skills: `pragmatic-architect` fills the spec's
 "Design & Boundaries" section, and `ai-engineering-mentor` fills "AI Design" for LLM-related work.
 
+## Security model
+
+The defaults are deliberately permissive. Restrictions are not built in yet. Tighten them for your
+environment before you run agents unattended.
+
+**What an agent can do.** Every adapter starts the agent CLI so that it works without approval prompts.
+The agent runs as your user. It can run shell commands and read every file you can read.
+
+| Agent CLI | Execution mode in the adapter | Where to tighten it |
+| --- | --- | --- |
+| Claude Code | `--permission-mode acceptEdits --allowedTools Bash` (any shell command) | `providers/claude.py`, `.claude/settings.json` |
+| Codex | `project-edit` profile: workspace writes, network on | `.codex/config.toml`, `.codex/rules/` |
+| Cursor | `--force --trust --sandbox disabled` | `providers/cursor.py`, `.cursor/cli.json` |
+| opencode | `--auto`; any bash command except a short denylist | `providers/opencode.py`, `opencode.json` |
+| Antigravity | `--dangerously-skip-permissions` | `providers/agy.py` |
+
+Adapters live in `scripts/ae-sdlc/providers/` in your project. Each one marks the permissive part
+with a `SECURITY:` comment.
+
+**What the existing measures do and do not do.**
+
+- The tracker credentials file uses mode `600`. This stops other users from reading it. It does not
+  stop an agent running as the same user.
+- `LINEAR_*` and `ATLASSIAN_*` are removed from the agent's environment, and the prompt tells the
+  agent not to call the tracker. This keeps secrets out of the environment. The file on disk is still
+  readable.
+- Deny rules for `.env` and `credentials.json` match file names only. They are not an isolation boundary.
+
+**Untrusted input.** Spec text and tracker comments become part of the agent's prompt. On Linear or
+Jira, anyone who can edit an issue can inject instructions, and the agent may follow them with shell
+access (prompt injection, OWASP LLM01 and LLM06). Comments are labeled as untrusted data, but a label
+does not enforce anything.
+
+**The unattended gate.** `./ae-sdlc workflow` refuses to start unless one of these holds:
+
+- `AE_SDLC_SANDBOX=1` is set. This is the operator's statement that the process runs in a container
+  or VM that sees only this checkout and the network it needs. It is not verified.
+- `--allow-unsandboxed` is passed for this run. The run report records `"sandbox": "unsandboxed"`.
+
+Headless `prepare-work` and `execute-work` from the shell are started by you, one at a time, and are
+not gated. They use the same permissive adapter flags.
+
+**A reasonable sandbox for nightly runs:** a container running as a non-root user, with only the
+checkout mounted (not `$HOME`). Give it a dedicated, narrowly scoped tracker token and allow outbound
+traffic only to the model API and the tracker. Use a separate clone or worktree, so a bad run can be
+thrown away.
+
 ## Technology
 
 - Python 3.11+, standard library for the installed runtime; `hatchling` build
 - [`mcp`](https://pypi.org/project/mcp/) Python SDK (streamable HTTP) and `httpx2` for Linear and Jira
-- Agent CLIs driven as subprocesses in headless mode. Results are validated against JSON schemas
-  (for example `codex exec --output-schema`)
+- Agent CLIs driven as subprocesses in headless mode. Claude Code, Codex and Antigravity enforce the
+  result JSON schema in the CLI. Cursor and opencode get the schema in the prompt. The runner marks a
+  spec `DONE` only on exit code 0 with status `COMPLETED`; anything else ends `BLOCKED`
 - `pytest`, with a fake MCP server for backend tests; `uv` / `pipx` for install
 
 ## Development
@@ -137,8 +185,8 @@ removed once parity is confirmed. Design notes and the backend plan are in `docs
 
 - One workflow runner per checkout (enforced by a lock). Linear and Jira have no conditional writes, so
   runners on different machines can race.
-- The credentials file uses mode `600`, which does not stop an agent running as the same user from
-  reading it.
+- Agents run with permissive execution modes and can read the credentials file (mode `600` does not
+  stop the same user). See [Security model](#security-model).
 - Jira needs a scoped API token or service-account key. OAuth is not automated.
 - Edits made to a spec while its agent runs are reported, not merged.
 - The runner lock uses `fcntl`, so it runs on Linux, macOS and WSL only. Native Windows is not supported.

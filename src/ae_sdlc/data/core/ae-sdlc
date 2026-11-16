@@ -91,6 +91,8 @@ def main() -> int:
     p.add_argument("scope")
     p.add_argument("--model")
     p.add_argument("--max-specs", type=int)
+    p.add_argument("--allow-unsandboxed", action="store_true",
+                   help="run without a declared sandbox (AE_SDLC_SANDBOX=1); the agent can reach your secrets")
 
     p = sub.add_parser("status")
     p.add_argument("scope", nargs="?")
@@ -132,6 +134,8 @@ def main() -> int:
             argv += ["--model", a.model]
         if a.max_specs:
             argv += ["--max-specs", str(a.max_specs)]
+        if a.allow_unsandboxed:
+            argv.append("--allow-unsandboxed")
         try:
             if backend_name(ROOT) != "local":  # the package needs the credentials and removes them itself
                 return run_package_command(ROOT, Path(__file__), ["workflow", *argv])

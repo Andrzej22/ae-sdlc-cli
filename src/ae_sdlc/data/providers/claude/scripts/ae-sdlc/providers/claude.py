@@ -20,6 +20,13 @@ def check_cli() -> None:
 def run(skill: str, args: str, tail: str, schema: Path, model: str | None,
         background: bool = False) -> tuple[int, dict | None]:
     """One fresh, non-persisted headless Claude Code run; returns (exit code, structured result)."""
+    # SECURITY: deliberately permissive defaults - adjust for your environment.
+    # The project ships without execution restrictions on purpose: the agent runs as your
+    # user, can run arbitrary shell commands and can read any file you can (including the
+    # tracker credentials file). Unattended runs refuse to start outside a declared
+    # sandbox (see "Security model" in the project README).
+    # Here: --allowedTools Bash pre-approves every shell command. Narrow it to concrete
+    # patterns (e.g. "Bash(pytest:*)", "Bash(git diff:*)") for your project.
     cmd = [
         "claude", "-p", "--no-session-persistence",
         "--permission-mode", "acceptEdits",

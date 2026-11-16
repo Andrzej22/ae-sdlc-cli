@@ -27,6 +27,13 @@ def run(skill: str, args: str, tail: str, schema: Path, model: str | None,
     os.close(fd)
     out = Path(name)
     out.unlink(missing_ok=True)
+    # SECURITY: deliberately permissive defaults - adjust for your environment.
+    # The project ships without execution restrictions on purpose: the agent runs as your
+    # user, can run arbitrary shell commands and can read any file you can (including the
+    # tracker credentials file). Unattended runs refuse to start outside a declared
+    # sandbox (see "Security model" in the project README).
+    # Here: the "project-edit" profile allows writes in the repo and opens the network
+    # (see .codex/config.toml). Tighten the profile or the rules in .codex/rules/.
     cmd = [
         "codex", "exec", "--ephemeral",
         "--config", 'default_permissions="project-edit"',

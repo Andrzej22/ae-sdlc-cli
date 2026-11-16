@@ -49,5 +49,11 @@ def load_store(project, monkeypatch):
     for m in list(sys.modules):
         if m in ("work_store", "run_workflow", "providers", "work") or m.startswith("work."):
             sys.modules.pop(m, None)
-    import work_store  # noqa: WPS433
+    import work_store
     return work_store
+
+
+@pytest.fixture(autouse=True)
+def declared_sandbox(monkeypatch):
+    """Tests run fake agents, so they declare the sandbox the unattended runner requires."""
+    monkeypatch.setenv("AE_SDLC_SANDBOX", "1")
