@@ -29,7 +29,7 @@ no application code) override anything the supporting skills suggest.
 
 ## Procedure
 
-1. Find existing work once, before creating anything: `./ae-sdlc work lookup "<keywords>"`, and `./ae-sdlc work get <ID>` for an item named in the request.
+1. Find existing work once, before creating anything: `ae-sdlc work lookup "<keywords>"`, and `ae-sdlc work get <ID>` for an item named in the request.
 2. Separate confirmed requirements, constraints, assumptions, risks, dependencies, non-goals, and blocking questions.
 3. Ask only questions whose answer materially changes behavior, permissions/security, data handling, compatibility, destructive behavior, or scope.
 4. In non-interactive mode, never invent a blocking decision. Persist the question and return `NEEDS_INPUT`.
@@ -41,7 +41,7 @@ no application code) override anything the supporting skills suggest.
 7. For any feature touching an entity, design the client-facing API (see "Client API Design Rule" in AGENTS.md): CRUD completeness, access management, role/permissions in responses, list filtering/pagination, error codes. Record it in the spec's "API Surface" section and list deferred endpoints explicitly.
 8. Write observable acceptance criteria and relevant negative/boundary behavior.
 9. Mark a spec `READY` only when implementation can proceed without inventing material product behavior.
-10. Write the content as JSON to `.ae-sdlc-runtime/publish.json` (format below) and run `./ae-sdlc work publish --json-file .ae-sdlc-runtime/publish.json`. It works the same on every backend. Do not write epic/spec files under `docs/product/` yourself.
+10. Write the content as JSON to `.ae-sdlc-runtime/publish.json` (format below) and run `ae-sdlc work publish --json-file .ae-sdlc-runtime/publish.json`. It works the same on every backend. Do not write epic/spec files under `docs/product/` yourself.
 11. Use the IDs and URLs the command returns; never invent an ID. On a non-zero exit, nothing is confirmed except what `partial` lists: fix the cause and publish the same document again, which does not duplicate work.
 12. Stop before application-code implementation.
 

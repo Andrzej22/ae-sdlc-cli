@@ -66,7 +66,7 @@ def _not_found(exc: ToolFailed) -> bool:
 class LinearWorkBackend:
     def __init__(self, client: McpClient, settings: Mapping[str, str]):
         if not settings.get("team"):
-            raise WorkConfigError("[linear] team is not set; run ./ae-sdlc backend connect linear")
+            raise WorkConfigError("[linear] team is not set; run ae-sdlc backend connect linear")
         self.client = client
         self.settings = settings
         self.team = settings["team"]

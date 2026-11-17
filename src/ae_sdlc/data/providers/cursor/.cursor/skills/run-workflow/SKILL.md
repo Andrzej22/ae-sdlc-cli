@@ -9,13 +9,13 @@ disable-model-invocation: true
 For unattended/batch execution, invoke the repository runner once:
 
 ```bash
-./ae-sdlc workflow <workflow-name> <scope>
+ae-sdlc workflow <workflow-name> <scope>
 ```
 
 Example:
 
 ```bash
-./ae-sdlc workflow nightly EPIC-001
+ae-sdlc workflow nightly EPIC-001
 ```
 
 The runner owns scheduling and status transitions. It loads artifact metadata in-process and starts one fresh headless Cursor Agent CLI run per eligible spec.

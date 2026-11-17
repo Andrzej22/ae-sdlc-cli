@@ -1,8 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Shell(./ae-sdlc work:*)",
-      "Shell(./ae-sdlc status:*)"
+      "Shell(ae-sdlc work:*)",
+      "Shell(ae-sdlc status:*)"
     ],
     "deny": [
       "Read(.env)",

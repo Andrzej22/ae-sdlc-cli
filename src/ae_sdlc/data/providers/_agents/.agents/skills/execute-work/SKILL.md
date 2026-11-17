@@ -13,7 +13,7 @@ Implement ready product work with minimal harness overhead.
 
 During this skill:
 
-- **do not call** `./ae-sdlc`, except the `./ae-sdlc work` commands named in this procedure;
+- **do not call** `ae-sdlc`, except the `ae-sdlc work` commands named in this procedure;
 - **do not call** `scripts/ae-sdlc/*`;
 - **do not invoke** another agent session;
 - **do not spawn** Researcher/Verifier/Reviewer subagents;
@@ -56,19 +56,19 @@ Accept:
 For an epic, run once:
 
 ```bash
-./ae-sdlc work list <EPIC-ID> --status READY --eligible
+ae-sdlc work list <EPIC-ID> --status READY --eligible
 ```
 
 Do not expand product scope beyond the selected artifacts.
 
-When an automation runner says `runner_owns_status=true`, make no `./ae-sdlc` call at all: use the spec and comments given in the prompt when they are there, otherwise read the spec under `docs/product/` directly, and skip steps 2 and 6's commands.
+When an automation runner says `runner_owns_status=true`, make no `ae-sdlc` call at all: use the spec and comments given in the prompt when they are there, otherwise read the spec under `docs/product/` directly, and skip steps 2 and 6's commands.
 
 ### 2. Start each spec
 
 Before coding, run once per selected spec:
 
 ```bash
-./ae-sdlc work start <ID>
+ae-sdlc work start <ID>
 ```
 
 It checks that the spec is `READY` with its dependencies `DONE`, marks it `IN_PROGRESS`, and prints JSON with the full spec (`item`), its `epic`, `dependencies`, `related` items, recent `comments`, and the current revision.
@@ -115,12 +115,12 @@ Never edit workflow status yourself. After implementation, write the result for 
 `status` is `COMPLETED`, `PARTIAL`, `BLOCKED`, `FAILED`, or `NEEDS_INPUT`; put a concise reason in `blockers` for anything but `COMPLETED`. Then run once per spec:
 
 ```bash
-./ae-sdlc work finish <ID> --result-file .ae-sdlc-runtime/result-<ID>.json
+ae-sdlc work finish <ID> --result-file .ae-sdlc-runtime/result-<ID>.json
 ```
 
 `COMPLETED` moves the spec to `DONE`; every other status moves it to `BLOCKED` with the reason recorded. If the command fails, repeat it once at most, then report the error; never redo the implementation because of it.
 
-Add a comment only for a finding someone must act on, not for progress. Write the text to a file under `.ae-sdlc-runtime/`, then run `./ae-sdlc work comment <ID> --text-file <file>`. The local backend does not store comments and answers `capability_missing`; put the finding in the final response instead.
+Add a comment only for a finding someone must act on, not for progress. Write the text to a file under `.ae-sdlc-runtime/`, then run `ae-sdlc work comment <ID> --text-file <file>`. The local backend does not store comments and answers `capability_missing`; put the finding in the final response instead.
 
 When an automation runner explicitly says it owns status, do not edit workflow status or run these commands; return the structured result and let the runner update it. Put a finding someone must act on in the result's `comments`, addressed to this spec or an item linked to it, instead of calling `work comment`.
 

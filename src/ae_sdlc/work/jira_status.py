@@ -31,7 +31,7 @@ class StatusPolicy:
     def __init__(self, settings: Mapping[str, str]):
         missing = [_setting(status) for status in _REQUIRED if not settings.get(_setting(status))]
         if missing:
-            raise WorkConfigError(f"[jira] {', '.join(missing)} not set; run ./ae-sdlc backend connect jira")
+            raise WorkConfigError(f"[jira] {', '.join(missing)} not set; run ae-sdlc backend connect jira")
         self.names = {status: settings[_setting(status)] for status in Status if settings.get(_setting(status))}
         lowered = [name.lower() for status, name in self.names.items() if status != Status.READY]
         ready = self.names[Status.READY].lower()

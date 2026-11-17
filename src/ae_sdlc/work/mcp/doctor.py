@@ -144,7 +144,7 @@ def run_doctor(provider: str, settings: Mapping[str, str], env: Mapping[str, str
     missing = [key for key in _SETTINGS[provider] if not settings.get(key)]
     if missing:
         checks.append(Check("configuration", MISSING, f"{', '.join(missing)} not set; "
-                                                      f"run ./ae-sdlc backend connect {provider}"))
+                                                      f"run ae-sdlc backend connect {provider}"))
         return checks
     shown = [*_SETTINGS[provider], *(["project"] if provider == "linear" and settings.get("project") else [])]
     checks.append(Check("configuration", OK, ", ".join(f"{k}={settings[k]}" for k in shown)))

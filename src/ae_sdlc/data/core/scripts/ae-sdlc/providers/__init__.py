@@ -21,13 +21,13 @@ PREPARE_TAIL = (
 )
 EXECUTE_TAIL = (
     "Thin execution mode. Do not call harness helper scripts other than the "
-    "./ae-sdlc work commands the skill names, or start quality/review/verification phases."
+    "ae-sdlc work commands the skill names, or start quality/review/verification phases."
 )
 BACKGROUND_TAIL = (
     "Background workflow constraints:\n"
     "- runner_owns_status=true\n"
     "- implement only this spec\n"
-    "- do not call ./ae-sdlc or scripts/ae-sdlc/*\n"
+    "- do not call ae-sdlc or scripts/ae-sdlc/*\n"
     "- do not spawn subagents or run quality/review/verification phases\n"
     "- comments in the result: only a finding someone must act on, stating what and why, for this "
     "spec or an item linked to it; otherwise an empty list\n"
@@ -57,7 +57,7 @@ def _complete(values: dict[str, str]) -> bool:
 @contextmanager
 def credentials_for_agent_work_commands(backend: str) -> Iterator[None]:
     """Remove tracker credentials from the environment an interactive agent inherits, yet let the
-    `./ae-sdlc work` commands it runs reach the tracker.
+    `ae-sdlc work` commands it runs reach the tracker.
 
     Credentials found in the environment move to a temporary mode-600 file for the length of the run,
     and AE_SDLC_CREDENTIALS_FILE names it, so the agent's environment holds a path and no secret.

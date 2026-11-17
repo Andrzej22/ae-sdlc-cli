@@ -342,7 +342,7 @@ def _execute(run: _Run) -> int:
     print(json.dumps(run.report, indent=2, ensure_ascii=False))
     print(f"run_report={report_path.relative_to(run.root)}")
     if run.report["pending_updates_total"]:
-        print("Tracker updates are still owed; finish them with: ./ae-sdlc work recover", file=sys.stderr)
+        print("Tracker updates are still owed; finish them with: ae-sdlc work recover", file=sys.stderr)
     return 1 if run.report["failed"] or run.report["error"] or run.report["pending_updates_total"] else 0
 
 

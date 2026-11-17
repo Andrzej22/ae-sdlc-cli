@@ -1,8 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(./ae-sdlc work:*)",
-      "Bash(./ae-sdlc status:*)"
+      "Bash(ae-sdlc work:*)",
+      "Bash(ae-sdlc status:*)"
     ],
     "deny": [
       "Read(./.env)",

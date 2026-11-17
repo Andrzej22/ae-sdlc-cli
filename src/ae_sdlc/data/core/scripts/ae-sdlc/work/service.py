@@ -175,7 +175,7 @@ class WorkService:
         if item.kind != "spec":
             raise InvalidTransition(f"{item.id} is an {item.kind}; only a spec can be started")
         if self.pending and self.pending.load(item.id):
-            raise InvalidTransition(f"{item.id} has a finished run whose update is owed; run ./ae-sdlc work recover")
+            raise InvalidTransition(f"{item.id} has a finished run whose update is owed; run ae-sdlc work recover")
         if item.status == Status.IN_PROGRESS:
             return context, True
         if item.status != Status.READY:

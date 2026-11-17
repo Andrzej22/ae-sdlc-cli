@@ -21,13 +21,13 @@ Product decomposition and implementation execution are separate concerns. An epi
 
 ## Runtime budget principle
 
-Harness-specific tool calls inside `execute-work` should normally be one `./ae-sdlc work start` and one `./ae-sdlc work finish` per spec.
+Harness-specific tool calls inside `execute-work` should normally be one `ae-sdlc work start` and one `ae-sdlc work finish` per spec.
 
 The model may use ordinary repository read/search/edit commands needed to implement the feature, but it should not call any other harness script.
 
 ## Unattended runs
 
-Run one workflow runner per project. `./ae-sdlc workflow` holds a lock under `.ae-sdlc-runtime/` that stops a second runner on the same checkout. Nothing stops a runner on another machine: Jira and Linear status changes are not atomic compare-and-swap operations, so the runner re-reads status and revision before it starts a spec but cannot guarantee exclusive ownership.
+Run one workflow runner per project. `ae-sdlc workflow` holds a lock under `.ae-sdlc-runtime/` that stops a second runner on the same checkout. Nothing stops a runner on another machine: Jira and Linear status changes are not atomic compare-and-swap operations, so the runner re-reads status and revision before it starts a spec but cannot guarantee exclusive ownership.
 
 | Run outcome | Status | In the run report |
 | --- | --- | --- |
@@ -35,9 +35,9 @@ Run one workflow runner per project. `./ae-sdlc workflow` holds a lock under `.a
 | `BLOCKED`, `NEEDS_INPUT` | `BLOCKED`, reason from the agent | `blocked` |
 | `FAILED`, `PARTIAL`, agent crash, no result | `BLOCKED`, reason starts with `Execution failed:` | `failed` |
 
-The runner never repeats a spec by itself. A stopped spec, including one left `IN_PROGRESS` by a crash, runs again only after `./ae-sdlc work recover <ID> --requeue`.
+The runner never repeats a spec by itself. A stopped spec, including one left `IN_PROGRESS` by a crash, runs again only after `ae-sdlc work recover <ID> --requeue`.
 
-Before it updates the tracker, the runner saves the update under `.ae-sdlc-runtime/pending/`, and removes it once the provider confirms. If the update fails, the code is already written: `./ae-sdlc work recover [ID]` retries only the update and starts no agent.
+Before it updates the tracker, the runner saves the update under `.ae-sdlc-runtime/pending/`, and removes it once the provider confirms. If the update fails, the code is already written: `ae-sdlc work recover [ID]` retries only the update and starts no agent.
 
 The runner gives the agent the newest comments, limited by `[comments]` in the workflow file, as untrusted data. The agent returns findings in its result, and the runner posts them only to the spec or items linked to it, using a stable key that prevents duplicates. An epic becomes `DONE` only when it has specs and all of them are `DONE`.
 

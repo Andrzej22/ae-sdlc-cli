@@ -13,10 +13,10 @@ Epics and specs live in one active backend: `local` (Markdown under `docs/produc
 ## Selecting a backend
 
 ```bash
-./ae-sdlc backend connect linear   # or: jira. Stores credentials and discovers settings
-./ae-sdlc backend doctor           # verifies the active backend with real read-only calls
-./ae-sdlc backend use linear       # refuses a backend that fails its checks
-./ae-sdlc backend show
+ae-sdlc backend connect linear   # or: jira. Stores credentials and discovers settings
+ae-sdlc backend doctor           # verifies the active backend with real read-only calls
+ae-sdlc backend use linear       # refuses a backend that fails its checks
+ae-sdlc backend show
 ```
 
 Remote backends need the installed `ae-sdlc` package (`pipx install`, `uv tool install`); `local` needs neither the package nor credentials. The selection and non-secret settings are in `.ae-sdlc/work.toml`. With no file, the backend is `local`.
@@ -38,7 +38,7 @@ The plan's suggested `[work.context]` and `[work.execution]` tables are not read
 
 ### Local fallback and switching
 
-`./ae-sdlc backend use local` returns to the Markdown workflow at any time. Switching only changes which backend new commands use: nothing is copied, deleted or synchronized, and each backend keeps its own work. A tracker update still owed to the previous backend stays saved; switch back and run `./ae-sdlc work recover` to finish it.
+`ae-sdlc backend use local` returns to the Markdown workflow at any time. Switching only changes which backend new commands use: nothing is copied, deleted or synchronized, and each backend keeps its own work. A tracker update still owed to the previous backend stays saved; switch back and run `ae-sdlc work recover` to finish it.
 
 ## Credentials and permissions
 
@@ -49,7 +49,7 @@ The first match is used, per provider:
 
 `backend connect` writes that file through a hidden prompt. Never put a token in `work.toml` or on a command line.
 
-Coding agents never inherit `LINEAR_*` or `ATLASSIAN_*`. For interactive `prepare-work` and `execute-work`, whose agent runs `./ae-sdlc work` itself, credentials found in the environment are moved to a temporary mode-600 file for the length of the run; `AE_SDLC_CREDENTIALS_FILE` gives the agent its path, not the secret, and the file is deleted afterwards. Credentials from `credentials.toml` are used as they are.
+Coding agents never inherit `LINEAR_*` or `ATLASSIAN_*`. For interactive `prepare-work` and `execute-work`, whose agent runs `ae-sdlc work` itself, credentials found in the environment are moved to a temporary mode-600 file for the length of the run; `AE_SDLC_CREDENTIALS_FILE` gives the agent its path, not the secret, and the file is deleted afterwards. Credentials from `credentials.toml` are used as they are.
 
 **Linear** needs an API key whose user can read the team and create issues, projects, labels and comments.
 
@@ -75,7 +75,7 @@ Before a spec starts, its newest comments are given to the agent as untrusted da
 
 ```bash
 export LINEAR_API_KEY=...
-./ae-sdlc --provider claude workflow nightly ENG-PROJECT --max-specs 5
+ae-sdlc --provider claude workflow nightly ENG-PROJECT --max-specs 5
 ```
 
 A `workflow` run starts one fresh agent per eligible spec, in dependency order, and writes `.ae-sdlc-runtime/runs/<run>/report.json`. It exits non-zero if a spec failed, the tracker failed, or an update is still owed. `LINEAR_*` and `ATLASSIAN_*` are removed from the agent's environment. A lock allows one runner per checkout. The runner refuses to start unless `AE_SDLC_SANDBOX=1` declares a sandbox or `--allow-unsandboxed` is passed for that run.
@@ -84,9 +84,9 @@ A `workflow` run starts one fresh agent per eligible spec, in dependency order, 
 
 | Situation | Command | Effect |
 | --- | --- | --- |
-| The run finished but the tracker update failed (`pending_updates` in the report) | `./ae-sdlc work recover [ID]` | Finishes the status and comments. Starts no agent |
-| A spec ended `BLOCKED` and the cause is resolved | `./ae-sdlc work recover ID --requeue` | Back to `READY`, so that the next run picks it up |
-| A crash left a spec `IN_PROGRESS` | `./ae-sdlc work recover ID --requeue` | Same. Check the working tree first |
+| The run finished but the tracker update failed (`pending_updates` in the report) | `ae-sdlc work recover [ID]` | Finishes the status and comments. Starts no agent |
+| A spec ended `BLOCKED` and the cause is resolved | `ae-sdlc work recover ID --requeue` | Back to `READY`, so that the next run picks it up |
+| A crash left a spec `IN_PROGRESS` | `ae-sdlc work recover ID --requeue` | Same. Check the working tree first |
 | `prepare-work` failed part-way | Publish the same document again | Existing work is reused, not duplicated |
 
 Nothing repeats a spec automatically. A failed run has a blocker that starts with `Execution failed:`, and a product question has the agent's own reason.
@@ -100,17 +100,17 @@ If `remote_edits` in the report lists a spec, someone changed it while its agent
 | 2 | invalid input | fix the JSON payload or arguments |
 | 3 | not found | check the id and the active backend (`backend show`) |
 | 4 | revision conflict | read the item again, then retry |
-| 5 | invalid transition | `./ae-sdlc work get ID`; the message names the status or dependency |
-| 6 | configuration or missing capability | `./ae-sdlc backend doctor` |
+| 5 | invalid transition | `ae-sdlc work get ID`; the message names the status or dependency |
+| 6 | configuration or missing capability | `ae-sdlc backend doctor` |
 | 7 | authentication or permission | check the token, its scopes and `chmod 600` on the credentials file |
 | 8 | rate limit, timeout or outage | retry later; for a finished run use `work recover` |
 
 ```bash
-./ae-sdlc backend show                 # active backend and settings
-./ae-sdlc backend doctor               # credential source, reachability, required tools, mapping
-./ae-sdlc status --blocked             # blocked work and reasons
-./ae-sdlc work get ID                  # one item as JSON
-./ae-sdlc work recover                 # finish owed updates and list what remains
+ae-sdlc backend show                 # active backend and settings
+ae-sdlc backend doctor               # credential source, reachability, required tools, mapping
+ae-sdlc status --blocked             # blocked work and reasons
+ae-sdlc work get ID                  # one item as JSON
+ae-sdlc work recover                 # finish owed updates and list what remains
 ```
 
 ## Known limitations

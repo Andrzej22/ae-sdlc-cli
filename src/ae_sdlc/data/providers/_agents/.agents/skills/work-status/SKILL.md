@@ -8,14 +8,14 @@ description: Inspect durable epic/spec state without implementation. Prefer the 
 Use:
 
 ```bash
-./ae-sdlc status <EPIC-or-SPEC>
+ae-sdlc status <EPIC-or-SPEC>
 ```
 
 or:
 
 ```bash
-./ae-sdlc status --ready
-./ae-sdlc status --blocked
+ae-sdlc status --ready
+ae-sdlc status --blocked
 ```
 
 This is a deterministic query of the active work backend. Do not implement code.

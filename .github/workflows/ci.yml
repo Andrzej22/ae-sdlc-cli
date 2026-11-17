@@ -59,12 +59,12 @@ jobs:
           project="$RUNNER_TEMP/project"
           mkdir "$project" && cd "$project" && git init -q
           ae-sdlc init --providers all
-          ./ae-sdlc validate
-          ./ae-sdlc status
+          ae-sdlc validate
+          ae-sdlc status
       - name: unattended run refuses to start without a sandbox
         run: |
           cd "$RUNNER_TEMP/project"
-          if ./ae-sdlc --provider claude workflow nightly EPIC-001 2> err.txt; then
+          if ae-sdlc --provider claude workflow nightly EPIC-001 2> err.txt; then
             echo "expected the sandbox gate to refuse"; exit 1
           fi
           grep -q "outside a sandbox" err.txt

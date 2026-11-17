@@ -1,10 +1,28 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
 from . import __version__, installer
+
+# Commands implemented by the ./ae-sdlc file that `init` writes into a repository.
+_PROJECT_COMMANDS = {"prepare-work", "execute-work", "workflow", "status", "validate", "backend", "work"}
+
+_PROJECT_HELP = """
+Inside a repository, after ae-sdlc init:
+
+  ae-sdlc validate
+  ae-sdlc status [--ready|--blocked] [SCOPE]
+  ae-sdlc prepare-work "<request>"
+  ae-sdlc execute-work SPEC-001
+  ae-sdlc workflow nightly EPIC-001
+  ae-sdlc backend {connect,use,show,doctor}
+
+ae-sdlc <command> --help shows that command's options.
+The repository file ./ae-sdlc runs the same commands. Skills call the installed ae-sdlc command.
+"""
 
 
 def _choose_interactively() -> list[str]:
@@ -57,8 +75,65 @@ def cmd_init(args: argparse.Namespace) -> int:
         print("merge by hand, then delete the sidecar:")
         for rel in res.conflicts:
             print(f"  ! {rel[:-len(installer.SIDECAR)]}  <-  {rel}")
-    print("\nNext: ./ae-sdlc validate")
+    print("\nNext: ae-sdlc validate")
     return 0
+
+
+def _split_project_command(argv: list[str]) -> tuple[Path | None, list[str]] | None:
+    """Split a leading `--dir` from a project command. `init` and `_work` stay with argparse.
+
+    Only flags before the first positional are inspected, so `_work --root <dir> work`
+    is not mistaken for the project `work` command.
+    """
+    explicit: Path | None = None
+    forwarded: list[str] = []
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok in ("--dir", "-d", "--provider", "-p"):
+            if i + 1 >= len(argv):
+                return None
+            if tok in ("--dir", "-d"):
+                explicit = Path(argv[i + 1])
+            else:
+                forwarded.extend((tok, argv[i + 1]))
+            i += 2
+            continue
+        if tok.startswith("--dir="):
+            explicit = Path(tok.split("=", 1)[1])
+            i += 1
+            continue
+        if tok.startswith("--provider="):
+            forwarded.append(tok)
+            i += 1
+            continue
+        if tok in _PROJECT_COMMANDS:
+            return explicit, [*forwarded, *argv[i:]]
+        return None
+    return None
+
+
+def _project_root(start: Path) -> Path:
+    start = start.resolve()
+    if start.is_file():
+        start = start.parent
+    for candidate in (start, *start.parents):
+        if (candidate / "ae-sdlc").is_file() and (candidate / ".ae-sdlc" / "manifest.json").is_file():
+            return candidate
+    raise SystemExit(
+        "ae-sdlc: no initialized project found (looked for ae-sdlc and .ae-sdlc/manifest.json).\n"
+        "Run ae-sdlc init in the repository first."
+    )
+
+
+def _run_project(root: Path, argv: list[str]) -> int:
+    script = root / "ae-sdlc"
+    try:
+        return subprocess.run([str(script), *argv], cwd=root).returncode
+    except PermissionError:
+        return subprocess.run([sys.executable, str(script), *argv], cwd=root).returncode
+    except OSError as exc:
+        raise SystemExit(f"ae-sdlc: cannot run {script}: {exc}") from exc
 
 
 def cmd_work(args: argparse.Namespace) -> int:
@@ -75,7 +150,21 @@ def cmd_work(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="ae-sdlc", description="Thin command-driven AE-SDLC harness installer")
+    argv = sys.argv[1:] if argv is None else argv
+    project = _split_project_command(argv)
+    if project is not None:
+        explicit, forwarded = project
+        start = Path.cwd() if explicit is None else explicit
+        if explicit is not None and not start.is_dir():
+            raise SystemExit(f"not a directory: {start}")
+        return _run_project(_project_root(start), forwarded)
+
+    ap = argparse.ArgumentParser(
+        prog="ae-sdlc",
+        description="Install and run the AE-SDLC harness.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=_PROJECT_HELP,
+    )
     ap.add_argument("--version", action="version", version=f"ae-sdlc {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 

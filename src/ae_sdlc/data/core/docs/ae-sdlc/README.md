@@ -14,12 +14,14 @@ How each agent invokes them is listed in `AGENTS.md` (`/name` for Claude Code, C
 ## Shell entrypoint
 
 ```bash
-./ae-sdlc status [--ready|--blocked] [SCOPE]
-./ae-sdlc prepare-work "<request>"
-./ae-sdlc execute-work SPEC-001
-./ae-sdlc workflow nightly EPIC-001
-./ae-sdlc validate
+ae-sdlc status [--ready|--blocked] [SCOPE]
+ae-sdlc prepare-work "<request>"
+ae-sdlc execute-work SPEC-001
+ae-sdlc workflow nightly EPIC-001
+ae-sdlc validate
 ```
+
+Run these with the installed `ae-sdlc` command, from this repository or any directory inside it. Skills call that same command. `./ae-sdlc` in this repository is the file the installed command runs.
 
 With several providers installed choose one via `--provider <name>` or `AE_SDLC_PROVIDER=<name>`.
 The installed providers are listed in `.ae-sdlc/manifest.json`.

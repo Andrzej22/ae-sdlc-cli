@@ -14,9 +14,9 @@ from .errors import CredentialsMissing
 
 SECTIONS = {"linear": "linear", "jira": "atlassian"}
 _MISSING_HELP = {
-    "linear": "set LINEAR_API_KEY or run ./ae-sdlc backend connect linear",
+    "linear": "set LINEAR_API_KEY or run ae-sdlc backend connect linear",
     "jira": "set ATLASSIAN_SERVICE_ACCOUNT_KEY, or ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN, "
-            "or run ./ae-sdlc backend connect jira",
+            "or run ae-sdlc backend connect jira",
 }
 
 

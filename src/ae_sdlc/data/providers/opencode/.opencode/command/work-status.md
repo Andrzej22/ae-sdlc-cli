@@ -8,14 +8,14 @@ argument-hint: "[EPIC-or-SPEC | --ready | --blocked]"
 Use the Bash tool to run:
 
 ```bash
-./ae-sdlc status <EPIC-or-SPEC>
+ae-sdlc status <EPIC-or-SPEC>
 ```
 
 or:
 
 ```bash
-./ae-sdlc status --ready
-./ae-sdlc status --blocked
+ae-sdlc status --ready
+ae-sdlc status --blocked
 ```
 
 This is a deterministic query of the active work backend. Do not implement code.

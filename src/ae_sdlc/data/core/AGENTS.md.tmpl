@@ -19,7 +19,7 @@ Do not automatically run the SDLC for ordinary prompts. Use these workflows when
 
 Keep the implementation hot path close to a bare agent session.
 
-Apart from the `./ae-sdlc work` commands, `execute-work` must not automatically invoke helper scripts, subagents, quality gates, independent verification, review, security review, or durable planning artifacts.
+Apart from the `ae-sdlc work` commands, `execute-work` must not automatically invoke helper scripts, subagents, quality gates, independent verification, review, security review, or durable planning artifacts.
 
 The harness exists primarily to:
 
@@ -79,7 +79,7 @@ Record the result in the spec's `API Surface` section and list deferred endpoint
 
 ## Script Discipline
 
-During `execute-work`, do not call `./ae-sdlc`, `scripts/ae-sdlc/*`, or other harness bookkeeping scripts. The one exception is the `./ae-sdlc work` commands: normally one `work start` and one `work finish` per spec, plus genuinely necessary comments.
+During `execute-work`, do not call `ae-sdlc`, `scripts/ae-sdlc/*`, or other harness bookkeeping scripts. The one exception is the `ae-sdlc work` commands: normally one `work start` and one `work finish` per spec, plus genuinely necessary comments.
 
 Get the spec from `work start`, edit the implementation with direct repository operations, report the result with `work finish`, and stop. Never edit workflow status by hand.
 

@@ -36,8 +36,12 @@ pipx install .                 # or: uv tool install .
 
 cd <your project>
 ae-sdlc init --providers claude,codex   # or --providers all; without flags, choose interactively
-./ae-sdlc validate
+ae-sdlc validate
 ```
+
+`ae-sdlc` finds the initialized repository from the current directory upward. `pipx` and `uv tool` put the command on `PATH`, usually in `~/.local/bin`. Open a new terminal after installing so the shell picks that up.
+
+Start the coding agent from that terminal. Skills and permission rules call `ae-sdlc`, and the agent inherits `PATH` from the shell that launched it. A desktop launcher, or Codex's project sandbox, does not see `~/.local/bin`, so the command is missing there. The repository file `./ae-sdlc` is what the installed command runs; agents do not call it.
 
 `init` never overwrites an existing file. If a file such as `AGENTS.md`, `CLAUDE.md`, `.gitignore` or
 `opencode.json` already exists with different content, the harness version is written next to it as
@@ -58,10 +62,10 @@ Inside the agent, as skills or slash commands (`/name` in Claude Code, Cursor, o
 The same steps from the shell, headless:
 
 ```bash
-./ae-sdlc --provider claude prepare-work "Add CSV export to the reports page"
-./ae-sdlc --provider codex  execute-work SPEC-001        # a different agent can implement it
-./ae-sdlc status --ready
-./ae-sdlc --provider codex  workflow nightly EPIC-001 --max-specs 5
+ae-sdlc --provider claude prepare-work "Add CSV export to the reports page"
+ae-sdlc --provider codex  execute-work SPEC-001        # a different agent can implement it
+ae-sdlc status --ready
+ae-sdlc --provider codex  workflow nightly EPIC-001 --max-specs 5
 ```
 
 When several providers are installed, select one per command with `--provider` or `AE_SDLC_PROVIDER`.
@@ -79,14 +83,14 @@ DRAFT ──(no blocking questions)──> READY ──> IN_PROGRESS ──> DON
   `.ae-sdlc-runtime/runs/<run>/report.json`.
 - Nothing is retried automatically. A failed or crashed spec ends `BLOCKED` until you requeue it.
 - If the tracker update fails after the code is written, it is saved locally and
-  `./ae-sdlc work recover` finishes it without starting an agent.
+  `ae-sdlc work recover` finishes it without starting an agent.
 
 ### Where work items live
 
 ```bash
-./ae-sdlc backend connect linear    # or: jira. Stores credentials, discovers team/project and statuses
-./ae-sdlc backend doctor            # checks the active backend with real read-only calls
-./ae-sdlc backend use local         # back to Markdown in docs/product/
+ae-sdlc backend connect linear    # or: jira. Stores credentials, discovers team/project and statuses
+ae-sdlc backend doctor            # checks the active backend with real read-only calls
+ae-sdlc backend use local         # back to Markdown in docs/product/
 ```
 
 | | local (default) | Linear | Jira |
@@ -149,7 +153,7 @@ Jira, anyone who can edit an issue can inject instructions, and the agent may fo
 access (prompt injection, OWASP LLM01 and LLM06). Comments are labeled as untrusted data, but a label
 does not enforce anything.
 
-**The unattended gate.** `./ae-sdlc workflow` refuses to start unless one of these holds:
+**The unattended gate.** `ae-sdlc workflow` refuses to start unless one of these holds:
 
 - `AE_SDLC_SANDBOX=1` is set. This is the operator's statement that the process runs in a container
   or VM that sees only this checkout and the network it needs. It is not verified.
@@ -186,7 +190,7 @@ uv run ruff check .
 ```
 
 CI (`.github/workflows/ci.yml`) runs ruff, the test suite on Python 3.11-3.13 (Linux) and 3.13 (macOS),
-and an install smoke test: `ae-sdlc init --providers all` in a fresh repository, `./ae-sdlc validate`,
+and an install smoke test: `ae-sdlc init --providers all` in a fresh repository, `ae-sdlc validate`,
 and a check that an unattended run refuses to start without a sandbox. Live tracker tests do not run in CI.
 
 Layout: `src/ae_sdlc/` is the installer and the remote-backend code. `src/ae_sdlc/data/core` holds the
@@ -205,6 +209,6 @@ removed once parity is confirmed. Design notes and the backend plan are in `docs
 - `changed_files` is checked only in a git working tree. Elsewhere the report says `"checked": false`.
   The check confirms that files changed, not that the change is correct. It does not re-run the
   agent's tests (`command_run`).
-- Validation of results applies to unattended runs. `./ae-sdlc work finish`, used by interactive
+- Validation of results applies to unattended runs. `ae-sdlc work finish`, used by interactive
   sessions, keeps its lighter check.
 - The runner lock uses `fcntl`, so it runs on Linux, macOS and WSL only. Native Windows is not supported.

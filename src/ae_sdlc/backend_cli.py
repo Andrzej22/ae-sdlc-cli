@@ -140,7 +140,7 @@ def connect(root: Path, provider: str) -> int:
     config = read_config(root)
     config[provider] = settings
     write_config(root, config)
-    print(f"Connected {provider}. Next: ./ae-sdlc backend doctor, then ./ae-sdlc backend use {provider}")
+    print(f"Connected {provider}. Next: ae-sdlc backend doctor, then ae-sdlc backend use {provider}")
     return 0
 
 

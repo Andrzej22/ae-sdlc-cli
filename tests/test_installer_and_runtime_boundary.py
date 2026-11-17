@@ -88,7 +88,7 @@ def test_execute_work_skills_forbid_helper_scripts_for_every_provider(tmp_path):
     for rel in paths:
         t = (tmp_path / rel).read_text().lower()
         assert "do not call" in t and "scripts/ae-sdlc/*" in t, rel
-    assert "do not call ./ae-sdlc" in installer_tail()
+    assert "do not call ae-sdlc" in installer_tail()
 
 
 def installer_tail() -> str:

@@ -400,19 +400,19 @@ def test_every_provider_has_the_same_work_contract(everything, skill):
 def test_skills_use_the_shared_commands_and_no_markdown_bookkeeping(everything):
     for rel in SKILLS["execute-work"]:
         text = (everything / rel).read_text(encoding="utf-8")
-        assert "./ae-sdlc work start <ID>" in text and "./ae-sdlc work finish <ID>" in text
+        assert "ae-sdlc work start <ID>" in text and "ae-sdlc work finish <ID>" in text
         assert "status: DONE\n" not in text
         assert "**do not spawn**" in text  # the narrow exception lifts nothing else
     for rel in SKILLS["prepare-work"]:
         text = (everything / rel).read_text(encoding="utf-8")
-        assert "./ae-sdlc work publish --json-file" in text
+        assert "ae-sdlc work publish --json-file" in text
         assert "Persist artifacts by editing" not in text
 
 
 def test_skill_commands_avoid_redirection(everything):
     for rel in [*SKILLS["execute-work"], *SKILLS["prepare-work"]]:
         for line in (everything / rel).read_text(encoding="utf-8").splitlines():
-            if line.startswith("./ae-sdlc work"):
+            if line.startswith("ae-sdlc work"):
                 assert not re.search(r"[<>|]\s*[./\w]", line.replace("<ID>", "").replace("<EPIC-ID>", "")), line
 
 
@@ -422,9 +422,9 @@ def test_sandboxes_do_not_restrict_network_hosts(everything):
     assert network["enabled"] is True
     assert "domains" not in network
     claude = json.loads((everything / ".claude/settings.json").read_text())
-    assert "Bash(./ae-sdlc work:*)" in claude["permissions"]["allow"]
+    assert "Bash(ae-sdlc work:*)" in claude["permissions"]["allow"]
     cursor = json.loads((everything / ".cursor/cli.json").read_text())
-    assert "Shell(./ae-sdlc work:*)" in cursor["permissions"]["allow"]
+    assert "Shell(ae-sdlc work:*)" in cursor["permissions"]["allow"]
     assert not {"WebFetch(*)", "WebSearch(*)"} & set(cursor["permissions"]["deny"])
     assert json.loads((everything / ".cursor/sandbox.json").read_text()) == {"networkPolicy": {"default": "allow"}}
 

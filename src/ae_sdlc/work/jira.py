@@ -53,7 +53,7 @@ class JiraWorkBackend:
     def __init__(self, client: McpClient, settings: Mapping[str, str]):
         missing = [key for key in ("cloud_id", "project_key") if not settings.get(key)]
         if missing:
-            raise WorkConfigError(f"[jira] {', '.join(missing)} not set; run ./ae-sdlc backend connect jira")
+            raise WorkConfigError(f"[jira] {', '.join(missing)} not set; run ae-sdlc backend connect jira")
         self.client = client
         self.settings = settings
         self.cloud_id = settings["cloud_id"]

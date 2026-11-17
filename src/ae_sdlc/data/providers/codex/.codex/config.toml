@@ -21,7 +21,7 @@ glob_scan_max_depth = 5
 "**/credentials.json" = "deny"
 "**/service-account.json" = "deny"
 
-# ./ae-sdlc work and status reach their MCP servers from inside the sandbox.
+# ae-sdlc work and status reach their MCP servers from inside the sandbox.
 [permissions.project-edit.network]
 enabled = true
 
