@@ -568,3 +568,138 @@ def test_transition_fails_when_jira_never_applies_it(fake, backend, monkeypatch)
     _ignore_transitions(fake, monkeypatch, 3)
     with pytest.raises(InvalidTransition, match="after requesting"):
         backend.transition(item.id, Status.IN_PROGRESS)
+
+
+# --- review step: only when [jira] status_review names a status ---
+
+REVIEW_STATUSES = ["To Do", "In Progress", "In Review", "Done"]
+REVIEW_SETTINGS = {**LABEL_BLOCKED, "status_review": "In Review"}
+
+
+@pytest.fixture
+def review_fake():
+    return FakeJira(statuses=REVIEW_STATUSES)
+
+
+@pytest.fixture
+def reviewing(review_fake):
+    return JiraWorkBackend(review_fake, REVIEW_SETTINGS)
+
+
+def test_there_is_no_review_step_unless_a_status_is_named(fake, backend):
+    assert backend.supports_review is False
+    assert WorkService(backend).completion_status == Status.DONE
+    item = backend.create(spec())
+    with pytest.raises(InvalidTransition, match="status_review"):
+        backend.transition(item.id, Status.REVIEW)
+    assert fake.issues[item.id]["status"] == "To Do"
+
+
+def test_an_unnamed_review_status_stays_outside_the_mapping():
+    fake = FakeJira(statuses=REVIEW_STATUSES)
+    backend = JiraWorkBackend(fake, LABEL_BLOCKED)
+    service = WorkService(backend)
+    a = backend.create(spec("A"))
+    b = backend.create(spec("B", deps=[a.id]))
+    fake.issues[a.id]["status"] = "In Review"  # a person moved it there
+    assert backend.get(a.id).status == "In Review"
+    assert service.eligible_specs(b.id) == []
+
+
+def test_named_review_status_maps_both_ways(review_fake, reviewing):
+    item = reviewing.create(spec())
+    assert reviewing.supports_review is True
+    assert reviewing.transition(item.id, Status.REVIEW).status == Status.REVIEW
+    assert review_fake.issues[item.id]["status"] == "In Review"
+    assert reviewing.get(item.id).status == Status.REVIEW
+    assert reviewing.transition(item.id, Status.DONE).status == Status.DONE
+
+
+def test_completed_work_waits_in_review_and_unblocks_dependents(review_fake, reviewing):
+    parent = reviewing.create(epic())
+    first = reviewing.create(spec("First", parent=parent.id))
+    second = reviewing.create(spec("Second", parent=parent.id, deps=[first.id]))
+    service = WorkService(reviewing)
+    service.start_execution(first.id)
+    finished = service.finish_execution(first.id, 0, {"status": "COMPLETED", "summary": "ok"}, "failed")
+    assert (finished.disposition, finished.target) == ("completed", Status.REVIEW)
+    assert review_fake.issues[first.id]["status"] == "In Review"
+    assert [s.id for s in service.eligible_specs(parent.id)] == [second.id], "review satisfies a dependency"
+
+
+def test_an_epic_is_complete_only_when_its_specs_are_done_not_in_review(reviewing):
+    parent = reviewing.create(epic())
+    only = reviewing.create(spec("Only", parent=parent.id))
+    service = WorkService(reviewing)
+    service.start_execution(only.id)
+    service.finish_execution(only.id, 0, {"status": "COMPLETED", "summary": "ok"}, "failed")
+    assert service.epic_progress(parent.id)["complete"] is False
+    reviewing.transition(only.id, Status.DONE)  # the person approves it
+    assert service.epic_progress(parent.id)["complete"] is True
+
+
+def test_an_owed_review_update_is_satisfied_by_a_spec_already_done(reviewing):
+    item = reviewing.create(spec())
+    service = WorkService(reviewing)
+    service.start_execution(item.id)
+    reviewing.transition(item.id, Status.DONE)
+    update = {"work_id": item.id, "target_status": Status.REVIEW, "blocker": None,
+              "allowed_from": [Status.IN_PROGRESS], "comments": []}
+    service.apply_update(update)
+    assert reviewing.get(item.id).status == Status.DONE, "a finished review is not reopened"
+
+
+def test_a_blocked_spec_leaves_review_cleanly(review_fake, reviewing):
+    item = reviewing.create(spec())
+    reviewing.transition(item.id, Status.REVIEW)
+    assert reviewing.transition(item.id, Status.BLOCKED, blocker="Needs a decision").status == Status.BLOCKED
+    assert BLOCKED_LABEL in review_fake.issues[item.id]["labels"]
+    assert reviewing.transition(item.id, Status.REVIEW).status == Status.REVIEW
+    assert BLOCKED_LABEL not in review_fake.issues[item.id]["labels"]
+
+
+def test_review_status_must_be_distinct_from_the_other_statuses(fake):
+    for taken in ("In Progress", "Done", "To Do"):
+        with pytest.raises(WorkConfigError, match="same Jira status"):
+            JiraWorkBackend(fake, {**LABEL_BLOCKED, "status_review": taken})
+
+
+def test_status_policy_describes_the_review_status():
+    assert "REVIEW=In Review" in StatusPolicy(REVIEW_SETTINGS).describe()
+    assert StatusPolicy(REVIEW_SETTINGS).canonical("In Review", []) == Status.REVIEW
+    assert StatusPolicy(LABEL_BLOCKED).has_review is False
+
+
+def test_check_mapping_does_not_ask_the_epic_type_for_the_review_status():
+    data = {"data": {"statuses": [{"id": "1", "name": "To Do"}, {"id": "2", "name": "In Progress"},
+                                  {"id": "3", "name": "Done"}, {"id": "4", "name": "In Review"}],
+                     "workTypes": [{"name": "Task", "statusIds": ["1", "2", "3", "4"]},
+                                   {"name": "Epic", "statusIds": ["1", "2", "3"]}]}}
+    policy = StatusPolicy(REVIEW_SETTINGS)
+    check_mapping(policy, data, ["Task", "Epic"], review_exempt=["Epic"])
+    with pytest.raises(WorkConfigError, match="Epic has no status 'In Review'"):
+        check_mapping(policy, data, ["Task", "Epic"])
+    with pytest.raises(WorkConfigError, match="Task has no status 'In Review'"):
+        check_mapping(policy, {"data": {"statuses": data["data"]["statuses"][:3]}}, ["Task"], review_exempt=["Epic"])
+
+
+@pytest.mark.parametrize("terminal, answer, expected", [
+    (True, "2", {"status_review": "In Review"}),
+    (True, "1", {}),
+    (False, None, {}),
+], ids=["use-review", "no-review", "no-terminal"])
+def test_connect_offers_an_in_review_status_as_the_review_step(monkeypatch, capsys, terminal, answer, expected):
+    from ae_sdlc import backend_cli
+    statuses = [{"name": n} for n in ("To Do", "In Progress", "In Review", "Done", "Code Review")]
+    mapping = {"status_draft": "To Do", "status_ready": "To Do", "status_in_progress": "In Progress",
+               "status_done": "Done", "status_blocked": "Code Review"}  # already used: not offered again
+    monkeypatch.setattr("sys.stdin", type("T", (), {"isatty": staticmethod(lambda: terminal)})())
+    monkeypatch.setattr("builtins.input", lambda _: answer)
+    assert backend_cli._offer_jira_review(statuses, mapping) == expected
+    assert ("status_review" in capsys.readouterr().out) is (not terminal)
+
+
+def test_connect_offers_nothing_when_the_project_has_no_review_status(capsys):
+    from ae_sdlc import backend_cli
+    assert backend_cli._offer_jira_review([{"name": "To Do"}, {"name": "Done"}], {}) == {}
+    assert capsys.readouterr().out == ""

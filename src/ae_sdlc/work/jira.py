@@ -50,8 +50,6 @@ def _not_found(exc: ToolFailed) -> bool:
 
 
 class JiraWorkBackend:
-    supports_review = False  # a Jira workflow's own review status is shown as it is, never mapped
-
     def __init__(self, client: McpClient, settings: Mapping[str, str]):
         missing = [key for key in ("cloud_id", "project_key") if not settings.get(key)]
         if missing:
@@ -66,6 +64,11 @@ class JiraWorkBackend:
         self._tools: set[str] | None = None
         self._types: list[dict] | None = None
         self._checked_types: set[str] = set()
+
+    @property
+    def supports_review(self) -> bool:
+        """True only when [jira] status_review names the project's review status."""
+        return self.policy.has_review
 
     # --- provider access ---
 
@@ -383,8 +386,10 @@ class JiraWorkBackend:
 
     def transition(self, work_id: str, target_status: str, blocker: str | None = None) -> WorkItem:
         """Apply the status and confirm it by reading it back. Retrying after a failure is safe."""
-        if target_status not in set(Status) or target_status == Status.REVIEW:
+        if target_status not in set(Status):
             raise InvalidTransition(f"invalid status: {target_status}")
+        if target_status == Status.REVIEW and not self.supports_review:
+            raise InvalidTransition("no review status is configured; set status_review under [jira]")
         item = self._fetch(work_id)
         try:
             confirmed = self._apply_until_confirmed(item, target_status)

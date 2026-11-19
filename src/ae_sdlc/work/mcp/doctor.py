@@ -118,8 +118,9 @@ def _probe_jira(client: McpClient, settings: Mapping[str, str], probe: _Probe) -
         policy = StatusPolicy(settings)
         statuses = invoke(client, operation("jira", "list_statuses"), {"mode": "project", "projectKey": key},
                           cloud_id=cloud_id, retry_safe=True).data
-        check_mapping(policy, statuses, [settings.get("issue_type_spec") or "Task",
-                                         settings.get("issue_type_epic") or "Epic"])
+        epic_type = settings.get("issue_type_epic") or "Epic"
+        check_mapping(policy, statuses, [settings.get("issue_type_spec") or "Task", epic_type],
+                      review_exempt=[epic_type])
         return policy
     probe.run("live: status mapping", status_mapping, lambda policy: policy.describe())
     names = ("live: comments", "live: relationships", "live: transitions")

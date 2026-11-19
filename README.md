@@ -105,11 +105,11 @@ When several providers are installed, select one per command with `--provider` o
 
 ```text
 DRAFT ──(no blocking questions)──> READY ──> IN_PROGRESS ──> DONE
-                                                   │  └─(Linear with status_review)─> REVIEW ──(a person)──> DONE
+                                                   │  └─(with status_review)─> REVIEW ──(a person)──> DONE
                                                    └───────> BLOCKED ──(work recover --requeue)──> READY
 ```
 
-- `DONE` means implemented in the working tree, not merged. On Linear with `status_review` set (for example
+- `DONE` means implemented in the working tree, not merged. On Linear or Jira with `status_review` set (for example
   to "In Review"), finished work waits in `REVIEW` until a person marks it `DONE`; everywhere else it goes
   straight to `DONE`. Opening the branch or PR is left to a person.
 - A spec runs only when it is `READY` and all its dependencies are `DONE` or in `REVIEW`. An epic is `DONE`

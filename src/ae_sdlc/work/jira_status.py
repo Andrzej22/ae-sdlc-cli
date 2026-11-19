@@ -5,6 +5,10 @@ status decides whether an agent runs. A status outside the mapping is reported a
 never executed and never satisfies a dependency. DRAFT and READY may share a status, in which case
 READY is an explicit label. BLOCKED without a mapped status is a label on the current status. Moves
 use the transitions one issue offers now; the workflow itself is never modified.
+
+REVIEW exists only when `status_review` names a status (for example "In Review"). Without it the
+project has no review step: finished work goes straight to DONE. Jira cannot tell a review status from
+any other by category, so a review step is only ever known by name, and a person chooses it.
 """
 from __future__ import annotations
 
@@ -32,14 +36,17 @@ class StatusPolicy:
         missing = [_setting(status) for status in _REQUIRED if not settings.get(_setting(status))]
         if missing:
             raise WorkConfigError(f"[jira] {', '.join(missing)} not set; run ae-sdlc backend connect jira")
-        self.names = {status: settings[_setting(status)] for status in Status
-                      if status != Status.REVIEW and settings.get(_setting(status))}
+        self.names = {status: settings[_setting(status)] for status in Status if settings.get(_setting(status))}
         lowered = [name.lower() for status, name in self.names.items() if status != Status.READY]
         ready = self.names[Status.READY].lower()
         self.shared = ready == self.names[Status.DRAFT].lower()
         if len(set(lowered)) != len(lowered) or (not self.shared and ready in lowered):
             raise WorkConfigError("[jira] only status_draft and status_ready may name the same Jira status")
         self.owners = {name.lower(): status for status, name in self.names.items()}
+
+    @property
+    def has_review(self) -> bool:
+        return Status.REVIEW in self.names
 
     @property
     def has_blocked_status(self) -> bool:
@@ -111,8 +118,12 @@ def propose_mapping(statuses: list[dict]) -> dict[str, str]:
     return {key: value for key, value in proposal.items() if value}
 
 
-def check_mapping(policy: StatusPolicy, data: Any, issue_types: Iterable[str]) -> None:
-    """Confirm each mapped status exists for each issue type, from listJiraStatuses mode=project."""
+def check_mapping(policy: StatusPolicy, data: Any, issue_types: Iterable[str], review_exempt: Iterable[str] = ()) -> None:
+    """Confirm each mapped status exists for each issue type, from listJiraStatuses mode=project.
+
+    A type in review_exempt (the epic type) never holds a spec's review state, so it is not checked for it.
+    """
+    exempt = {name.lower() for name in review_exempt}
     payload = data.get("data", data) if isinstance(data, dict) else {}
     statuses = [s for s in payload.get("statuses") or [] if isinstance(s, dict)]
     for issue_type in issue_types:
@@ -120,5 +131,7 @@ def check_mapping(policy: StatusPolicy, data: Any, issue_types: Iterable[str]) -
         ids = set(work.get("statusIds") or []) if work else {s.get("id") for s in statuses}
         available = {name_of(s).lower() for s in statuses if s.get("id") in ids}
         for status, name in policy.names.items():
+            if status == Status.REVIEW and issue_type.lower() in exempt:
+                continue
             if name.lower() not in available:
                 raise WorkConfigError(f"[jira] {_setting(status)}: issue type {issue_type} has no status {name!r}")

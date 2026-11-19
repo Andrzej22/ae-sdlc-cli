@@ -82,20 +82,32 @@ def _obtain_credential(provider: str) -> tuple[auth.Credential, dict[str, str] |
     return credential, values
 
 
-def _offer_review(client: McpClient, team: str) -> dict[str, str]:
-    """Offer a started state named like "In Review" as the review step. It changes what DONE means, so a person decides."""
-    statuses = rows(client.call("list_issue_statuses", {"team": team}, retry_safe=True).data, "statuses", "nodes")
-    found = [str(s["name"]) for s in statuses if s.get("type") == "started" and "review" in str(s.get("name")).lower()]
+def _pick_review(found: list[str], owner: str, section: str) -> dict[str, str]:
+    """Offer a status named like "In Review" as the review step. It changes what DONE means, so a person decides."""
     if not found:
         return {}
     if not sys.stdin.isatty():
-        print(f"review: the team has {found[0]!r}; run this command in a terminal to use it as the review step "
-              "(or set status_review under [linear])")
+        print(f"review: {owner} has {found[0]!r}; run this command in a terminal to use it as the review step "
+              f"(or set status_review under [{section}])")
         return {}
     print("Finished work can wait in a review state for a person to mark it Done, instead of going straight to Done.")
     name = _choose("review step", [("", "none: finished work goes straight to Done"),
                                    *((n, f"{n}: finished work waits here until a person marks it Done") for n in found)])
     return {"status_review": name} if name else {}
+
+
+def _offer_review(client: McpClient, team: str) -> dict[str, str]:
+    statuses = rows(client.call("list_issue_statuses", {"team": team}, retry_safe=True).data, "statuses", "nodes")
+    found = [str(s["name"]) for s in statuses if s.get("type") == "started" and "review" in str(s.get("name")).lower()]
+    return _pick_review(found, "the team", "linear")
+
+
+def _offer_jira_review(statuses: list[dict], mapping: dict[str, str]) -> dict[str, str]:
+    """Offer a project status named like "In Review" that the confirmed mapping does not already use."""
+    taken = {name.lower() for name in mapping.values()}
+    found = [str(s["name"]) for s in statuses if "review" in str(s.get("name", "")).lower()
+             and str(s["name"]).lower() not in taken]
+    return _pick_review(found, "the project", "jira")
 
 
 def _discover_linear(client: McpClient) -> dict[str, str]:
@@ -147,7 +159,9 @@ def _discover_jira(client: McpClient) -> dict[str, str]:
                                    for p in rows(projects, "values", "projects") if p.get("key")])
     statuses = invoke(client, operation("jira", "list_statuses"), {"mode": "project", "projectKey": key},
                       cloud_id=cloud_id, retry_safe=True).data
-    return {"cloud_id": cloud_id, "project_key": key, **_confirm_statuses(rows(statuses, "statuses"))}
+    listed = rows(statuses, "statuses")
+    mapping = _confirm_statuses(listed)
+    return {"cloud_id": cloud_id, "project_key": key, **mapping, **_offer_jira_review(listed, mapping)}
 
 
 def connect(root: Path, provider: str) -> int:
