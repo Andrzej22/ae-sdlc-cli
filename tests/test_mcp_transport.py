@@ -302,7 +302,7 @@ def test_rows_unwraps_bare_keyed_and_enveloped_responses():
 
 # --- doctor against a server with Linear's tool names ---
 
-def linear_tools(issues=True, projects=()):
+def linear_tools(issues=True, projects=(), review=False):
     def get_issue(id: str, includeRelations: bool = False) -> str:
         return json.dumps({"id": id})
 
@@ -317,7 +317,9 @@ def linear_tools(issues=True, projects=()):
 
     def list_issue_statuses(team: str) -> str:
         return json.dumps([{"name": "Backlog", "type": "backlog"}, {"name": "Todo", "type": "unstarted"},
-                           {"name": "Doing", "type": "started"}, {"name": "Done", "type": "completed"}])
+                           {"name": "Doing", "type": "started"},
+                           *([{"name": "In Review", "type": "started"}] if review else []),
+                           {"name": "Done", "type": "completed"}])
 
     def get_project(query: str) -> str:
         if query not in projects:
@@ -460,6 +462,24 @@ def test_connect_offers_the_team_projects(tmp_path, monkeypatch, capsys, termina
         monkeypatch.setattr("builtins.input", lambda _: answer)
         assert backend_cli.run(tmp_path, "connect", "linear") == 0
     assert read_config(tmp_path)["linear"] == expected
+
+
+@pytest.mark.parametrize("terminal, answer, expected", [
+    (True, "2", {"team": "Core", "status_review": "In Review"}),
+    (True, "1", {"team": "Core"}),
+    (False, None, {"team": "Core"}),
+], ids=["use-review", "no-review", "no-terminal"])
+def test_connect_offers_an_in_review_state_as_the_review_step(tmp_path, monkeypatch, capsys, terminal, answer, expected):
+    (tmp_path / ".ae-sdlc").mkdir()
+    with serve(linear_tools(review=True)) as (url, _):
+        monkeypatch.setenv("AE_SDLC_LINEAR_MCP_URL", url)
+        monkeypatch.setenv("AE_SDLC_CREDENTIALS_FILE", str(tmp_path / "none"))
+        monkeypatch.setenv("LINEAR_API_KEY", SECRET)
+        monkeypatch.setattr(sys, "stdin", type("T", (), {"isatty": staticmethod(lambda: terminal)})())
+        monkeypatch.setattr("builtins.input", lambda _: answer)
+        assert backend_cli.run(tmp_path, "connect", "linear") == 0
+    assert read_config(tmp_path)["linear"] == expected
+    assert ("status_review" in capsys.readouterr().out) is (not terminal)
 
 
 def test_connect_with_rejected_credential_stores_nothing(tmp_path, monkeypatch, capsys):

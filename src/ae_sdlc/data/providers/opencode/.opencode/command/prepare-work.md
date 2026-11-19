@@ -32,9 +32,8 @@ no application code) override anything the supporting skills suggest.
 3. Ask only questions whose answer materially changes behavior, permissions/security, data handling, compatibility, destructive behavior, or scope.
 4. In non-interactive mode, never invent a blocking decision. Persist the question and return `NEEDS_INPUT`.
 5. Prefer the smallest artifact shape:
-   - broad coherent feature -> `epic.md` + one `spec.md` by default;
-   - genuinely independent implementation chunks -> epic + multiple specs;
-   - already bounded work -> standalone spec.
+   - a coherent feature that one spec covers -> a single standalone spec, without an epic;
+   - genuinely independent implementation chunks -> epic + multiple specs (an epic needs at least two specs: on Linear it becomes a Project, which must not hold a single issue).
 6. Do **not** mechanically create stories/tasks for backend/frontend/database/tests.
 7. For any feature touching an entity, design the client-facing API (see "Client API Design Rule" in AGENTS.md): CRUD completeness, access management, role/permissions in responses, list filtering/pagination, error codes. Record it in the spec's "API Surface" section and list deferred endpoints explicitly.
 8. Write observable acceptance criteria and relevant negative/boundary behavior.

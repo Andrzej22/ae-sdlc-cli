@@ -240,6 +240,29 @@ def test_epic_is_done_only_when_every_spec_is(rig, second, done):
     assert rig.report()["epic"]["complete"] is done
 
 
+def test_a_backend_with_a_review_step_leaves_finished_specs_in_review(rig):
+    rig.tracker.supports_review = True
+    rig.tracker.add("EPIC", kind="epic", status="READY")
+    rig.tracker.add("ENG-1", parent_id="EPIC")
+    rig.tracker.add("ENG-2", parent_id="EPIC", dependencies=["ENG-1"])
+    assert rig.main("EPIC") == 0
+    assert rig.calls == ["ENG-1", "ENG-2"], "a spec in review unblocks its dependent in the same run"
+    assert [rig.tracker.items[i].status for i in ("ENG-1", "ENG-2")] == ["REVIEW", "REVIEW"]
+    assert rig.tracker.items["EPIC"].status == "READY" and rig.report()["epic"]["complete"] is False
+    assert not rig.pending.all()
+
+
+def test_an_owed_review_update_is_recovered_as_review(rig):
+    rig.tracker.supports_review = True
+    rig.tracker.add("ENG-1")
+    rig.tracker.fail_transitions_to = {"REVIEW"}
+    assert rig.main("ENG-1") == 1
+    assert [u["target_status"] for u in rig.pending.all()] == ["REVIEW"]
+    rig.tracker.fail_transitions_to = set()
+    assert rig.service.recover()["recovered"][0]["status"] == "REVIEW"
+    assert rig.tracker.items["ENG-1"].status == "REVIEW"
+
+
 def test_local_backend_completes_an_epic_and_posts_no_comments(project, load_store, monkeypatch):
     import providers
     import run_workflow

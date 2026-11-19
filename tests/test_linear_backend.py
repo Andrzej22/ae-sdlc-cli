@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -45,10 +46,16 @@ class FakeLinear:
         self.calls, self.lose_response_of = [], set()
         self.clock = 0
         self.tool_names = tools
+        self.hidden_arguments: set[str] = set()  # arguments the server's published schema does not list
 
     def list_tools(self):
         names = self.tool_names or [n[5:] for n in dir(self) if n.startswith("tool_") and n != "tool_names"]
-        return [SimpleNamespace(name=n) for n in names]
+        return [SimpleNamespace(name=n, input_schema=self._schema(n)) for n in names]
+
+    def _schema(self, tool):
+        """Like the real server, publish every argument the tool accepts."""
+        parameters = inspect.signature(getattr(self, f"tool_{tool}")).parameters
+        return {"properties": {p: {} for p in parameters if p not in self.hidden_arguments}}
 
     def call(self, tool, arguments, *, retry_safe=False):
         self.calls.append((tool, copy.deepcopy(arguments)))
@@ -130,7 +137,7 @@ class FakeLinear:
         return self._page([self._row(i, fields) for i in found], "issues", cursor)
 
     def tool_save_issue(self, id=None, team=None, title=None, description=None, state=None, labels=None, project=...,
-                        addLabels=(), removeLabels=(), blockedBy=(), removeBlockedBy=(), parentId=...):
+                        addLabels=(), removeLabels=(), blockedBy=(), removeBlockedBy=(), parentId=..., assignee=None):
         for label in [*(labels or ()), *addLabels]:
             if label not in self.labels:
                 raise ToolFailed(f"Label not found: {label}")
@@ -148,6 +155,8 @@ class FakeLinear:
         if state is not None:
             found = self._state(state)
             issue["status"], issue["statusType"] = found["name"], found["type"]
+        if assignee is not None:
+            issue["assignee"] = assignee
         if title is not None:
             issue["title"] = title
         if description is not None:
@@ -475,6 +484,115 @@ def test_in_review_reads_as_in_progress(fake, backend):
     issue = backend.create(spec())
     fake.tool_save_issue(id=issue.id, state="In Review")
     assert backend.get(issue.id).status == Status.IN_PROGRESS
+
+
+# --- review step: only when [linear] status_review names a state ---
+
+@pytest.fixture
+def reviewing(fake):
+    return LinearWorkBackend(fake, {"team": "AND", "status_review": "In Review"})
+
+
+def test_there_is_no_review_step_unless_a_state_is_pinned(fake, backend):
+    assert backend.supports_review is False
+    assert WorkService(backend).completion_status == Status.DONE
+
+
+def test_pinned_review_state_maps_both_ways(fake, reviewing):
+    issue = reviewing.create(spec())
+    assert reviewing.supports_review is True
+    assert reviewing.transition(issue.id, Status.REVIEW).status == Status.REVIEW
+    assert fake.issues[issue.id]["status"] == "In Review"
+    assert reviewing.get(issue.id).status == Status.REVIEW
+    assert reviewing.transition(issue.id, Status.DONE).status == Status.DONE
+
+
+def test_completed_work_waits_in_review_and_unblocks_dependents(fake, reviewing):
+    project = reviewing.create(epic())
+    first = reviewing.create(spec("First", parent=project.id))
+    second = reviewing.create(spec("Second", parent=project.id, deps=[first.id]))
+    service = WorkService(reviewing)
+    service.start_execution(first.id)
+    finished = service.finish_execution(first.id, 0, {"status": "COMPLETED", "summary": "ok"}, "failed")
+    assert (finished.disposition, finished.target) == ("completed", Status.REVIEW)
+    assert fake.issues[first.id]["status"] == "In Review"
+    assert [s.id for s in service.eligible_specs(project.id)] == [second.id], "review satisfies a dependency"
+
+
+def test_an_epic_is_complete_only_when_its_specs_are_done_not_in_review(fake, reviewing):
+    project = reviewing.create(epic())
+    only = reviewing.create(spec("Only", parent=project.id))
+    service = WorkService(reviewing)
+    service.start_execution(only.id)
+    service.finish_execution(only.id, 0, {"status": "COMPLETED", "summary": "ok"}, "failed")
+    assert service.epic_progress(project.id)["complete"] is False
+    reviewing.transition(only.id, Status.DONE)  # the person approves it
+    assert service.epic_progress(project.id)["complete"] is True
+
+
+def test_finishing_again_after_a_person_marked_it_done_is_a_repeat(fake, reviewing):
+    issue = reviewing.create(spec())
+    service = WorkService(reviewing)
+    service.start_execution(issue.id)
+    result = {"status": "COMPLETED", "summary": "ok"}
+    assert service.complete_execution(issue.id, result)[2] is False
+    reviewing.transition(issue.id, Status.DONE)
+    item, _, repeated = service.complete_execution(issue.id, result)
+    assert (item.status, repeated) == (Status.DONE, True)
+
+
+def test_an_owed_review_update_is_satisfied_by_a_spec_already_done(fake, reviewing):
+    issue = reviewing.create(spec())
+    service = WorkService(reviewing)
+    service.start_execution(issue.id)
+    reviewing.transition(issue.id, Status.DONE)
+    update = {"work_id": issue.id, "target_status": Status.REVIEW, "blocker": None,
+              "allowed_from": [Status.IN_PROGRESS], "comments": []}
+    service.apply_update(update)
+    assert reviewing.get(issue.id).status == Status.DONE, "a finished review is not reopened"
+
+
+def test_a_project_has_no_review_status(fake, reviewing):
+    project = reviewing.create(epic())
+    with pytest.raises(InvalidTransition, match="no review status"):
+        reviewing.transition(project.id, Status.REVIEW)
+
+
+@pytest.mark.parametrize("name, message", [("Nope", "no state named"), ("In Progress", "other than"),
+                                           ("Todo", "must be a started"), ("Done", "must be a started")])
+def test_review_pin_must_be_a_distinct_started_state(name, message):
+    with pytest.raises(WorkConfigError, match=message):
+        build_status_mapping(STATES, {"status_review": name})
+
+
+def test_mapping_describes_the_review_state():
+    mapping = build_status_mapping(STATES, {"status_review": "In Review"})
+    assert mapping.states[Status.REVIEW] == "In Review" and "REVIEW=In Review" in mapping.describe()
+    assert mapping.canonical("In Review", "started", []) == Status.REVIEW
+    assert mapping.canonical("In Progress", "started", []) == Status.IN_PROGRESS
+
+
+# --- assignee on claim ---
+
+def test_starting_work_assigns_it_to_the_key_owner(fake, backend):
+    issue = backend.create(spec())
+    backend.transition(issue.id, Status.IN_PROGRESS)
+    assert fake.issues[issue.id]["assignee"] == "me"
+    assert fake.writes("save_issue")[-1]["assignee"] == "me"
+
+
+def test_other_transitions_leave_the_assignee_alone(fake, backend):
+    issue = backend.create(spec())
+    backend.transition(issue.id, Status.IN_PROGRESS)
+    backend.transition(issue.id, Status.DONE)
+    assert "assignee" not in fake.writes("save_issue")[-1]
+
+
+def test_assignee_is_skipped_when_the_server_does_not_publish_it(fake, backend):
+    fake.hidden_arguments = {"assignee"}
+    issue = backend.create(spec())
+    assert backend.transition(issue.id, Status.IN_PROGRESS).status == Status.IN_PROGRESS
+    assert "assignee" not in fake.issues[issue.id]
 
 
 def test_blocked_uses_label_and_stores_reason(fake, backend):

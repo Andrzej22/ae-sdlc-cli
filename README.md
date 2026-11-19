@@ -75,10 +75,15 @@ When several providers are installed, select one per command with `--provider` o
 
 ```text
 DRAFT ──(no blocking questions)──> READY ──> IN_PROGRESS ──> DONE
+                                                   │  └─(Linear with status_review)─> REVIEW ──(a person)──> DONE
                                                    └───────> BLOCKED ──(work recover --requeue)──> READY
 ```
 
-- A spec runs only when it is `READY` and all its dependencies are `DONE`.
+- `DONE` means implemented in the working tree, not merged. On Linear with `status_review` set (for example
+  to "In Review"), finished work waits in `REVIEW` until a person marks it `DONE`; everywhere else it goes
+  straight to `DONE`. Opening the branch or PR is left to a person.
+- A spec runs only when it is `READY` and all its dependencies are `DONE` or in `REVIEW`. An epic is `DONE`
+  only when all its specs are `DONE`.
 - `workflow` starts one fresh agent per eligible spec, in dependency order, and writes a report to
   `.ae-sdlc-runtime/runs/<run>/report.json`.
 - Nothing is retried automatically. A failed or crashed spec ends `BLOCKED` until you requeue it.
@@ -176,7 +181,7 @@ thrown away.
 - The runner does not trust the agent's report. It validates every result against the schema itself,
   for every provider (`work/result.py`, standard library only). It also compares `changed_files` with
   what really changed in the git working tree during the run (`work/worktree.py`). A spec becomes
-  `DONE` only on exit code 0, a valid `COMPLETED` result, a working tree that changed, and no claimed
+  `DONE` (or `REVIEW`) only on exit code 0, a valid `COMPLETED` result, a working tree that changed, and no claimed
   file left unchanged. Anything else ends `BLOCKED`. Changes the agent did not list are recorded in the
   run report under `verification`, but do not fail the run
 - `pytest`, with a fake MCP server for backend tests; `uv` / `pipx` for install

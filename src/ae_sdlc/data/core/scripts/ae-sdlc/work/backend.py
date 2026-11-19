@@ -57,6 +57,11 @@ class CapabilityMissing(WorkBackendError):
 
 @runtime_checkable
 class WorkBackend(Protocol):
+    """Optional capability, not part of the protocol so that existing backends keep working:
+    a backend whose workflow has a review step sets `supports_review` to True. Finished work then waits
+    in REVIEW until a person marks it DONE. Without the attribute the answer is False.
+    """
+
     def get(self, work_id: str) -> WorkItem:
         """Return the item, or raise WorkItemNotFound."""
 

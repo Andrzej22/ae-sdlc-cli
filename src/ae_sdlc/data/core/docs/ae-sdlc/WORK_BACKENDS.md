@@ -6,7 +6,7 @@ Epics and specs live in one active backend: `local` (Markdown under `docs/produc
 | --- | --- | --- | --- | --- |
 | Where work lives | `docs/product/` | the team | one project of the team | the project |
 | Epic | `docs/product/epics/EPIC-*.md` | a new Project | Issue labelled `ae-sdlc-epic` | Epic |
-| Spec | Markdown file | Issue | sub-issue of its epic, or a standalone Issue | Task, or the configured work type |
+| Spec | Markdown file | Issue in the epic's Project, or a standalone Issue | sub-issue of its epic, or a standalone Issue | Task, or the configured work type |
 | Dependency | `dependencies:` frontmatter | blocked-by relation | blocked-by relation | `Blocks` link |
 | Comments | not supported | yes | yes | yes |
 
@@ -29,6 +29,8 @@ backend = "linear"
 team = "Andrzej22"
 project = "ae-sdlc-test"   # optional; see below
 ```
+
+An epic is for two or more independent specs. A single spec is a standalone item: in Linear a Project holding one issue is noise.
 
 ### Linear: one project for all work
 
@@ -62,8 +64,13 @@ Coding agents never inherit `LINEAR_*` or `ATLASSIAN_*`. For interactive `prepar
 | `DRAFT` | backlog or triage | `status_draft` |
 | `READY` | unstarted | `status_ready`; plus the label `ae-sdlc-ready` when it shares a status with `DRAFT` |
 | `IN_PROGRESS` | started | `status_in_progress` |
+| `REVIEW` | the started state named by `status_review`; not available without it | not available |
 | `BLOCKED` | a native Blocked state, or the label `ae-sdlc-blocked` | `status_blocked`, or the label `ae-sdlc-blocked` |
 | `DONE` | completed | `status_done` |
+
+**Review step (Linear only, optional).** Without `status_review`, a finished spec goes straight to `DONE`, and `DONE` means implemented in the working tree, not merged. With `status_review = "In Review"` under `[linear]` (`backend connect linear` offers it when the team has such a state), a finished spec goes to `REVIEW` and waits there until a person marks it Done in Linear. `status_review` must name a `started` state other than the In Progress one. A spec in `REVIEW` satisfies its dependents, so a run can continue through a chain; only `DONE` specs complete an epic. Opening the branch or pull request is left to a person. Jira and the local backend have no review step.
+
+When the runner starts a spec, Linear also assigns it to the owner of the API key, if the server accepts an `assignee` argument.
 
 In Linear, `status_<canonical>` in `[linear]` pins a state by name. A canceled Linear issue never runs and never satisfies a dependency. A Jira status outside the mapping is shown as it is, never runs and never satisfies a dependency. Provider workflows are never modified.
 

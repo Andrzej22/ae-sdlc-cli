@@ -50,6 +50,8 @@ def _not_found(exc: ToolFailed) -> bool:
 
 
 class JiraWorkBackend:
+    supports_review = False  # a Jira workflow's own review status is shown as it is, never mapped
+
     def __init__(self, client: McpClient, settings: Mapping[str, str]):
         missing = [key for key in ("cloud_id", "project_key") if not settings.get(key)]
         if missing:
@@ -255,7 +257,7 @@ class JiraWorkBackend:
         """
         if item.kind not in {"epic", "spec"}:
             raise ValueError(f"invalid kind: {item.kind}")
-        if item.status not in set(Status):
+        if item.status not in set(Status) or item.status == Status.REVIEW:
             raise InvalidTransition(f"invalid status: {item.status}")
         if not item.title:
             raise ValueError("a Jira work item needs a title")
@@ -381,7 +383,7 @@ class JiraWorkBackend:
 
     def transition(self, work_id: str, target_status: str, blocker: str | None = None) -> WorkItem:
         """Apply the status and confirm it by reading it back. Retrying after a failure is safe."""
-        if target_status not in set(Status):
+        if target_status not in set(Status) or target_status == Status.REVIEW:
             raise InvalidTransition(f"invalid status: {target_status}")
         item = self._fetch(work_id)
         try:

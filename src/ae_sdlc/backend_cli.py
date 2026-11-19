@@ -82,20 +82,40 @@ def _obtain_credential(provider: str) -> tuple[auth.Credential, dict[str, str] |
     return credential, values
 
 
+def _offer_review(client: McpClient, team: str) -> dict[str, str]:
+    """Offer a started state named like "In Review" as the review step. It changes what DONE means, so a person decides."""
+    statuses = rows(client.call("list_issue_statuses", {"team": team}, retry_safe=True).data, "statuses", "nodes")
+    found = [str(s["name"]) for s in statuses if s.get("type") == "started" and "review" in str(s.get("name")).lower()]
+    if not found:
+        return {}
+    if not sys.stdin.isatty():
+        print(f"review: the team has {found[0]!r}; run this command in a terminal to use it as the review step "
+              "(or set status_review under [linear])")
+        return {}
+    print("Finished work can wait in a review state for a person to mark it Done, instead of going straight to Done.")
+    name = _choose("review step", [("", "none: finished work goes straight to Done"),
+                                   *((n, f"{n}: finished work waits here until a person marks it Done") for n in found)])
+    return {"status_review": name} if name else {}
+
+
 def _discover_linear(client: McpClient) -> dict[str, str]:
     teams = rows(client.call("list_teams", {"limit": 250}, retry_safe=True).data, "teams", "nodes")
     team = _choose("team", [(str(t["name"]), str(t["name"])) for t in teams if t.get("name")])
+    return {"team": team, **_discover_project(client, team), **_offer_review(client, team)}
+
+
+def _discover_project(client: McpClient, team: str) -> dict[str, str]:
     found = rows(client.call("list_projects", {"team": team, "limit": 50}, retry_safe=True).data, "projects", "nodes")
     names = sorted({str(p["name"]) for p in found if p.get("name")})
     if not names:
-        return {"team": team}
+        return {}
     if not sys.stdin.isatty():
         print("project: none, so each epic becomes its own Linear project "
               "(run this command in a terminal to choose one, or set project under [linear])")
-        return {"team": team}
+        return {}
     project = _choose("project", [("", "none: each epic becomes its own Linear project"),
                                   *((name, f"{name}: all work goes here, epics are issues") for name in names)])
-    return {"team": team, **({"project": project} if project else {})}
+    return {"project": project} if project else {}
 
 
 def _confirm_statuses(statuses: list[dict]) -> dict[str, str]:

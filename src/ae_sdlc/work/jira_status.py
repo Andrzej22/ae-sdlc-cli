@@ -32,7 +32,8 @@ class StatusPolicy:
         missing = [_setting(status) for status in _REQUIRED if not settings.get(_setting(status))]
         if missing:
             raise WorkConfigError(f"[jira] {', '.join(missing)} not set; run ae-sdlc backend connect jira")
-        self.names = {status: settings[_setting(status)] for status in Status if settings.get(_setting(status))}
+        self.names = {status: settings[_setting(status)] for status in Status
+                      if status != Status.REVIEW and settings.get(_setting(status))}
         lowered = [name.lower() for status, name in self.names.items() if status != Status.READY]
         ready = self.names[Status.READY].lower()
         self.shared = ready == self.names[Status.DRAFT].lower()
