@@ -26,6 +26,36 @@ Status: early (`0.1.0`), single maintainer, not published to PyPI.
   multi-agent loop, review phase or automatic retry.
 - It does not merge or open pull requests. The code ends up in your working tree.
 
+## Thin by design
+
+An earlier version of this harness wrapped every implementation in quality machinery. The default path
+now deliberately leaves it out, to keep runtime and token overhead low:
+
+- automatic verifier, reviewer and researcher subagents;
+- quality profiles and automatic quality escalation;
+- quality-gate scripts and quality CI;
+- post-implementation verification and review loops, and a separate security-review phase;
+- persistent `plan.md`, `verification.md` and `review.md` artifacts;
+- per-step artifact-store calls and hook scripts that run on every shell or tool action;
+- stories and tasks as mandatory decomposition layers: a spec is the executable unit;
+- helper-script calls from the model while it implements.
+
+What each step is for:
+
+```text
+prepare-work = reasoning-heavy product and spec work
+execute-work = thin implementation path, close to a bare agent session
+run-workflow = deterministic scheduler, one fresh headless agent run per ready spec
+work-status  = deterministic query, no model
+```
+
+`execute-work` implements the coherent change, runs at most one targeted command, and only when the spec
+requires it or a very cheap syntax or test check is needed to know the code runs. It then updates the
+status and stops. Tests may still be written as part of the implementation when the spec asks for them;
+that is different from a separate verification phase afterwards. Several related specs in one
+interactive invocation are implemented as one batch. For many independent specs, use `run-workflow`, so
+that each gets a fresh, bounded context.
+
 ## Install
 
 Requires Python 3.11+ and at least one of the agent CLIs on `PATH`.
@@ -200,8 +230,7 @@ and a check that an unattended run refuses to start without a sandbox. Live trac
 
 Layout: `src/ae_sdlc/` is the installer and the remote-backend code. `src/ae_sdlc/data/core` holds the
 shared runtime, docs and schemas copied into projects. `src/ae_sdlc/data/providers/<name>` holds
-per-agent skills, config and adapters. `harness/` contains the older per-provider copies and will be
-removed once parity is confirmed. Design notes and the backend plan are in `docs/`.
+per-agent skills, config and adapters. Design notes and the backend plan are in `docs/`.
 
 ## Known limitations
 
