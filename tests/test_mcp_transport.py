@@ -220,6 +220,59 @@ def test_missing_credentials_say_what_to_do(tmp_path):
         auth.resolve("linear", {"AE_SDLC_CREDENTIALS_FILE": str(tmp_path / "none.toml")})
 
 
+# --- project .env ---
+
+def _project_env(tmp_path, text, mode=0o600):
+    (tmp_path / ".env").write_text(text)
+    (tmp_path / ".env").chmod(mode)
+    return {"AE_SDLC_CREDENTIALS_FILE": str(tmp_path / "none.toml")}
+
+
+def test_project_env_beats_the_ambient_key_and_the_global_file(tmp_path):
+    env = _project_env(tmp_path, '# note\nexport AE_SDLC_LINEAR_API_KEY="from project" # trailing\nOTHER=1\n')
+    auth.save("linear", {"api_key": "from-file"}, {"AE_SDLC_CREDENTIALS_FILE": env["AE_SDLC_CREDENTIALS_FILE"]})
+    c = auth.resolve("linear", {**env, "LINEAR_API_KEY": "ambient"}, tmp_path)
+    assert c.source == "project" and c.authorization == "Bearer from project"
+    assert auth.resolve("linear", {**env, "LINEAR_API_KEY": "ambient"}).authorization == "Bearer ambient"  # no root, no .env
+
+
+def test_prefixed_process_env_beats_the_project_file(tmp_path):
+    env = _project_env(tmp_path, "AE_SDLC_LINEAR_API_KEY=from-file\n")
+    assert auth.resolve("linear", {**env, "AE_SDLC_LINEAR_API_KEY": "from-env"}, tmp_path).authorization == "Bearer from-env"
+
+
+def test_project_env_without_our_keys_falls_through(tmp_path):
+    env = _project_env(tmp_path, "DATABASE_URL=x\n", mode=0o644)  # an unrelated, readable .env is none of our business
+    assert auth.resolve("linear", {**env, "LINEAR_API_KEY": "ambient"}, tmp_path).source == "env"
+
+
+def test_project_env_with_credentials_must_be_private(tmp_path):
+    env = _project_env(tmp_path, "AE_SDLC_LINEAR_API_KEY=x\n", mode=0o644)
+    with pytest.raises(CredentialsMissing, match="chmod 600"):
+        auth.resolve("linear", env, tmp_path)
+
+
+def test_project_env_jira_forms(tmp_path):
+    env = _project_env(tmp_path, "AE_SDLC_ATLASSIAN_EMAIL=a@b\nAE_SDLC_ATLASSIAN_API_TOKEN=t\n")
+    assert auth.resolve("jira", env, tmp_path).authorization == "Basic " + base64.b64encode(b"a@b:t").decode()
+
+
+def test_save_project_quotes_and_replaces_the_other_credential_form(tmp_path):
+    path = auth.save_project(tmp_path, "jira", {"service_account_key": 'k"1 2'})
+    assert auth.resolve("jira", {}, tmp_path).authorization == 'Bearer k"1 2'
+    auth.save_project(tmp_path, "jira", {"email": "a@b", "api_token": "t"})
+    assert "SERVICE_ACCOUNT" not in path.read_text() and stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert auth.resolve("jira", {}, tmp_path).authorization.startswith("Basic ")
+
+
+def test_save_project_does_not_duplicate_the_gitignore_entry(tmp_path):
+    (tmp_path / ".gitignore").write_text("dist/")
+    auth.save_project(tmp_path, "linear", {"api_key": "a"})
+    auth.save_project(tmp_path, "linear", {"api_key": "b"})
+    assert (tmp_path / ".gitignore").read_text().splitlines() == ["dist/", ".env"]
+    assert (tmp_path / ".env").read_text() == "AE_SDLC_LINEAR_API_KEY=b\n"
+
+
 def test_credential_repr_hides_secret():
     assert SECRET not in repr(GOOD)
 
@@ -434,16 +487,23 @@ def test_use_refuses_unhealthy_backend_and_keeps_current(tmp_path, monkeypatch, 
 def test_connect_discovers_team_and_stores_settings_not_secrets(tmp_path, monkeypatch, capsys):
     (tmp_path / ".ae-sdlc").mkdir()
     cred_file = tmp_path / "c.toml"
+    (tmp_path / ".env").write_text("APP_DEBUG=1\nAE_SDLC_LINEAR_API_KEY=stale\n")
+    (tmp_path / ".env").chmod(0o600)
     with serve(linear_tools()) as (url, _):
         monkeypatch.setenv("AE_SDLC_LINEAR_MCP_URL", url)
         monkeypatch.setenv("AE_SDLC_CREDENTIALS_FILE", str(cred_file))
         monkeypatch.delenv("LINEAR_API_KEY", raising=False)
         monkeypatch.setattr(sys, "stdin", type("T", (), {"isatty": staticmethod(lambda: True)})())
         monkeypatch.setattr(backend_cli.getpass, "getpass", lambda _: SECRET)
+        monkeypatch.setattr("builtins.input", lambda _: "y")  # replace the stale key already in .env
         assert backend_cli.run(tmp_path, "connect", "linear") == 0
     assert read_config(tmp_path)["linear"] == {"team": "Core"}
     assert SECRET not in (tmp_path / ".ae-sdlc" / "work.toml").read_text()
-    assert stat.S_IMODE(cred_file.stat().st_mode) == 0o600
+    dotenv = tmp_path / ".env"
+    assert not cred_file.exists()  # the key lives in the project now
+    assert stat.S_IMODE(dotenv.stat().st_mode) == 0o600
+    assert dotenv.read_text() == f"APP_DEBUG=1\nAE_SDLC_LINEAR_API_KEY={SECRET}\n"
+    assert ".env" in (tmp_path / ".gitignore").read_text().splitlines()
     assert SECRET not in capsys.readouterr().out
 
 
@@ -530,10 +590,14 @@ def test_provider_env_scrub_removes_only_tracker_credentials(project, monkeypatc
     monkeypatch.setenv("LINEAR_API_KEY", "x")
     monkeypatch.setenv("ATLASSIAN_API_TOKEN", "y")
     monkeypatch.setenv("KEEP_ME", "z")
+    monkeypatch.setenv("AE_SDLC_LINEAR_API_KEY", "p")
+    monkeypatch.setenv("AE_SDLC_ATLASSIAN_EMAIL", "q")
+    monkeypatch.setenv("AE_SDLC_LINEAR_MCP_URL", "https://example.test/mcp")
     providers.remove_tracker_credentials_from_env()
     import os
     assert "LINEAR_API_KEY" not in os.environ and "ATLASSIAN_API_TOKEN" not in os.environ
-    assert os.environ["KEEP_ME"] == "z"
+    assert "AE_SDLC_LINEAR_API_KEY" not in os.environ and "AE_SDLC_ATLASSIAN_EMAIL" not in os.environ
+    assert os.environ["KEEP_ME"] == "z" and os.environ["AE_SDLC_LINEAR_MCP_URL"]
 
 
 def test_a_connection_that_never_answers_fails_within_the_timeout():

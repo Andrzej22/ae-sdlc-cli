@@ -123,7 +123,7 @@ DRAFT ──(no blocking questions)──> READY ──> IN_PROGRESS ──> DON
 ### Where work items live
 
 ```bash
-ae-sdlc backend connect linear    # or: jira. Stores credentials, discovers team/project and statuses
+ae-sdlc backend connect linear    # or: jira. Stores the key in the project's git-ignored .env as AE_SDLC_LINEAR_API_KEY, discovers team/project and statuses
 ae-sdlc backend doctor            # checks the active backend with real read-only calls
 ae-sdlc backend use local         # back to Markdown in docs/product/
 ```
@@ -176,9 +176,9 @@ with a `SECURITY:` comment.
 
 **What the existing measures do and do not do.**
 
-- The tracker credentials file uses mode `600`. This stops other users from reading it. It does not
+- The tracker credentials file and a project `.env` that holds `AE_SDLC_*` keys use mode `600`. This stops other users from reading it. It does not
   stop an agent running as the same user.
-- `LINEAR_*` and `ATLASSIAN_*` are removed from the agent's environment, and the prompt tells the
+- `LINEAR_*`, `ATLASSIAN_*` and the project-scoped `AE_SDLC_LINEAR_API_KEY` / `AE_SDLC_ATLASSIAN_*` are removed from the agent's environment, and the prompt tells the
   agent not to call the tracker. This keeps secrets out of the environment. The file on disk is still
   readable.
 - Deny rules for `.env` and `credentials.json` match file names only. They are not an isolation boundary.

@@ -281,7 +281,7 @@ def linear(project, monkeypatch):
         yield fake
 
     monkeypatch.setattr(backend_cli, "McpClient", client)
-    monkeypatch.setattr(backend_cli.auth, "resolve", lambda provider: object())
+    monkeypatch.setattr(backend_cli.auth, "resolve", lambda provider, **_: object())
     return project, fake
 
 

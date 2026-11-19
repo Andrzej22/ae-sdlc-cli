@@ -1,1 +1,4 @@
 .ae-sdlc-runtime/
+
+# Tracker credentials written by ae-sdlc backend connect
+.env
