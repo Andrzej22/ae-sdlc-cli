@@ -46,13 +46,13 @@ The plan's suggested `[work.context]` and `[work.execution]` tables are not read
 
 The first match is used, per provider:
 
-1. Project-scoped, with the `AE_SDLC_` prefix: `AE_SDLC_LINEAR_API_KEY`; `AE_SDLC_ATLASSIAN_SERVICE_ACCOUNT_KEY`, or `AE_SDLC_ATLASSIAN_EMAIL` with `AE_SDLC_ATLASSIAN_API_TOKEN`. Read from the process environment, then from `.env` in the project root. A `.env` that holds these must have mode `600` (the file is only read, never executed).
+1. Project-scoped, with the `AE_SDLC_` prefix: `AE_SDLC_LINEAR_API_KEY`; `AE_SDLC_ATLASSIAN_SERVICE_ACCOUNT_KEY`, or `AE_SDLC_ATLASSIAN_EMAIL` with `AE_SDLC_ATLASSIAN_API_TOKEN`. Read from the process environment, then from `.env` in the project root. The file is only read, never executed, and its mode is not checked (unlike `credentials.toml`), because other tools share it.
 2. Environment: `LINEAR_API_KEY`; `ATLASSIAN_SERVICE_ACCOUNT_KEY`, or `ATLASSIAN_EMAIL` with `ATLASSIAN_API_TOKEN`.
 3. `~/.config/ae-sdlc/credentials.toml` (respects `XDG_CONFIG_HOME`; `AE_SDLC_CREDENTIALS_FILE` overrides the path), which must have mode `600`.
 
 The prefixed names come first so that a key bound to one project is never overridden by an ambient `LINEAR_API_KEY` that belongs to another workspace, which fails as `unknown work item` because the issue is not visible to that key.
 
-`backend connect` writes the key to the project's `.env` through a hidden prompt (mode `600`, replacing only the `AE_SDLC_*` lines and keeping the rest) and adds `.env` to `.gitignore` when git does not already ignore it. Never put a token in `work.toml` or on a command line. The Claude provider's `settings.json` denies the agent's Read and Edit of `.env`.
+`backend connect` writes the key to the project's `.env` through a hidden prompt (replacing only the `AE_SDLC_*` lines and keeping the rest and the file's mode; a new file gets `600`) and adds `.env` to `.gitignore` when git does not already ignore it. Never put a token in `work.toml` or on a command line. The Claude provider's `settings.json` denies the agent's Read and Edit of `.env`.
 
 Coding agents never inherit `LINEAR_*` or `ATLASSIAN_*`. For interactive `prepare-work` and `execute-work`, whose agent runs `ae-sdlc work` itself, credentials found in the environment are moved to a temporary mode-600 file for the length of the run; `AE_SDLC_CREDENTIALS_FILE` gives the agent its path, not the secret, and the file is deleted afterwards. Credentials from `.env` or `credentials.toml` are used as they are.
 

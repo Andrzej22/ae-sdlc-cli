@@ -176,7 +176,7 @@ with a `SECURITY:` comment.
 
 **What the existing measures do and do not do.**
 
-- The tracker credentials file and a project `.env` that holds `AE_SDLC_*` keys use mode `600`. This stops other users from reading it. It does not
+- The tracker credentials file uses mode `600`, and a new project `.env` is created with it. This stops other users from reading it. It does not
   stop an agent running as the same user.
 - `LINEAR_*`, `ATLASSIAN_*` and the project-scoped `AE_SDLC_LINEAR_API_KEY` / `AE_SDLC_ATLASSIAN_*` are removed from the agent's environment, and the prompt tells the
   agent not to call the tracker. This keeps secrets out of the environment. The file on disk is still

@@ -242,14 +242,15 @@ def test_prefixed_process_env_beats_the_project_file(tmp_path):
 
 
 def test_project_env_without_our_keys_falls_through(tmp_path):
-    env = _project_env(tmp_path, "DATABASE_URL=x\n", mode=0o644)  # an unrelated, readable .env is none of our business
+    env = _project_env(tmp_path, "DATABASE_URL=x\n")
     assert auth.resolve("linear", {**env, "LINEAR_API_KEY": "ambient"}, tmp_path).source == "env"
 
 
-def test_project_env_with_credentials_must_be_private(tmp_path):
-    env = _project_env(tmp_path, "AE_SDLC_LINEAR_API_KEY=x\n", mode=0o644)
-    with pytest.raises(CredentialsMissing, match="chmod 600"):
-        auth.resolve("linear", env, tmp_path)
+def test_project_env_mode_is_not_checked_and_not_changed_on_save(tmp_path):
+    env = _project_env(tmp_path, "AE_SDLC_LINEAR_API_KEY=x\nAPP=1\n", mode=0o644)  # shared with other tools
+    assert auth.resolve("linear", env, tmp_path).authorization == "Bearer x"
+    auth.save_project(tmp_path, "linear", {"api_key": "y"})
+    assert stat.S_IMODE((tmp_path / ".env").stat().st_mode) == 0o644
 
 
 def test_project_env_jira_forms(tmp_path):
@@ -261,7 +262,7 @@ def test_save_project_quotes_and_replaces_the_other_credential_form(tmp_path):
     path = auth.save_project(tmp_path, "jira", {"service_account_key": 'k"1 2'})
     assert auth.resolve("jira", {}, tmp_path).authorization == 'Bearer k"1 2'
     auth.save_project(tmp_path, "jira", {"email": "a@b", "api_token": "t"})
-    assert "SERVICE_ACCOUNT" not in path.read_text() and stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert "SERVICE_ACCOUNT" not in path.read_text() and stat.S_IMODE(path.stat().st_mode) == 0o600  # new file
     assert auth.resolve("jira", {}, tmp_path).authorization.startswith("Basic ")
 
 

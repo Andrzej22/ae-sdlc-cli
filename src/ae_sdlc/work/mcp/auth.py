@@ -111,24 +111,20 @@ def project_env_file(root: Path) -> Path:
 def _from_project(provider: str, env: Mapping[str, str], root: Path | None) -> Credential | None:
     """AE_SDLC_* credentials from the process environment, else from the project's .env.
 
-    The .env file is only read here, never executed, and is refused when other users can read it."""
+    The .env file is only read here, never executed. Unlike the credentials file, its mode is not
+    checked: .env files are shared with other tools (docker compose, the app itself) that need it as it is."""
     names = PROJECT_VARIABLES[provider]
     found = {name: env[name] for name in names if env.get(name)}
     path = project_env_file(root) if root else None
     if path is not None and len(found) < len(names):
         try:
-            mode = path.stat().st_mode
             text = path.read_text(encoding="utf-8")
         except FileNotFoundError:
             pass
         except (OSError, UnicodeDecodeError) as exc:
             raise CredentialsMissing(f"cannot read {path}: {getattr(exc, 'strerror', None) or 'not valid UTF-8'}") from None
         else:
-            stored = {n: v for n, v in _parse_dotenv(text).items() if n in names and v}
-            if stored and stat.S_IMODE(mode) & 0o077:
-                raise CredentialsMissing(f"{path} holds credentials and is accessible by other users; "
-                                         f"fix it with: chmod 600 {path}")
-            found = {**stored, **found}
+            found = {**{n: v for n, v in _parse_dotenv(text).items() if n in names and v}, **found}
     return build_credential(provider, {key: found[name] for name, key in names.items() if name in found}, "project")
 
 
@@ -181,11 +177,13 @@ def _git_ignores(root: Path, name: str) -> bool:
 
 
 def save_project(root: Path, provider: str, values: dict[str, str]) -> Path:
-    """Write one provider's values to <project>/.env as AE_SDLC_* lines, with mode 600, keeping every
-    other line, and make sure git ignores the file."""
+    """Write one provider's values to <project>/.env as AE_SDLC_* lines, keeping every other line and the
+    file's existing mode (a new file gets 600), and make sure git ignores the file."""
     path = project_env_file(root)
+    mode = 0o600
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
+        mode = stat.S_IMODE(path.stat().st_mode)
     except FileNotFoundError:
         lines = []
     except (OSError, UnicodeDecodeError) as exc:
@@ -195,7 +193,7 @@ def save_project(root: Path, provider: str, values: dict[str, str]) -> Path:
     owned = re.compile(r"\s*(?:export\s+)?(" + "|".join(map(re.escape, names.values())) + r")\s*=")
     lines = [line for line in lines if not owned.match(line)]
     lines += [_dotenv_line(names[key], value) for key, value in values.items() if value]
-    atomic_write(path, "\n".join(lines) + "\n", 0o600)
+    atomic_write(path, "\n".join(lines) + "\n", mode)
     if not _git_ignores(root, ".env"):
         ignore = root / ".gitignore"
         existing = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
