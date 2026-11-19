@@ -1,3 +1,0 @@
-interface:
-  display_name: "prepare-work"
-  short_description: "Prepare durable epic/spec work without implementing code."
