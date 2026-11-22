@@ -157,7 +157,7 @@ def _rig(name, project, capsys, monkeypatch) -> Rig:
     stub = types.SimpleNamespace(resolve=lambda n=None: "fake", load=lambda n: adapter, BACKGROUND_TAIL="runner_owns_status=true",
                                  remove_tracker_credentials_from_env=lambda: None)
     monkeypatch.setattr(backend_cli, "McpClient", client)
-    monkeypatch.setattr(backend_cli.auth, "resolve", lambda provider: object())
+    monkeypatch.setattr(backend_cli.auth, "resolve", lambda provider, **_: object())
     monkeypatch.setattr(backend_cli.importlib, "import_module", lambda module: stub)
     return rig
 

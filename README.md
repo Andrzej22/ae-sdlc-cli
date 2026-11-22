@@ -26,6 +26,36 @@ Status: early (`0.1.0`), single maintainer, not published to PyPI.
   multi-agent loop, review phase or automatic retry.
 - It does not merge or open pull requests. The code ends up in your working tree.
 
+## Thin by design
+
+An earlier version of this harness wrapped every implementation in quality machinery. The default path
+now deliberately leaves it out, to keep runtime and token overhead low:
+
+- automatic verifier, reviewer and researcher subagents;
+- quality profiles and automatic quality escalation;
+- quality-gate scripts and quality CI;
+- post-implementation verification and review loops, and a separate security-review phase;
+- persistent `plan.md`, `verification.md` and `review.md` artifacts;
+- per-step artifact-store calls and hook scripts that run on every shell or tool action;
+- stories and tasks as mandatory decomposition layers: a spec is the executable unit;
+- helper-script calls from the model while it implements.
+
+What each step is for:
+
+```text
+prepare-work = reasoning-heavy product and spec work
+execute-work = thin implementation path, close to a bare agent session
+run-workflow = deterministic scheduler, one fresh headless agent run per ready spec
+work-status  = deterministic query, no model
+```
+
+`execute-work` implements the coherent change, runs at most one targeted command, and only when the spec
+requires it or a very cheap syntax or test check is needed to know the code runs. It then updates the
+status and stops. Tests may still be written as part of the implementation when the spec asks for them;
+that is different from a separate verification phase afterwards. Several related specs in one
+interactive invocation are implemented as one batch. For many independent specs, use `run-workflow`, so
+that each gets a fresh, bounded context.
+
 ## Install
 
 Requires Python 3.11+ and at least one of the agent CLIs on `PATH`.
@@ -75,10 +105,15 @@ When several providers are installed, select one per command with `--provider` o
 
 ```text
 DRAFT ──(no blocking questions)──> READY ──> IN_PROGRESS ──> DONE
+                                                   │  └─(with status_review)─> REVIEW ──(a person)──> DONE
                                                    └───────> BLOCKED ──(work recover --requeue)──> READY
 ```
 
-- A spec runs only when it is `READY` and all its dependencies are `DONE`.
+- `DONE` means implemented in the working tree, not merged. On Linear or Jira with `status_review` set (for example
+  to "In Review"), finished work waits in `REVIEW` until a person marks it `DONE`; everywhere else it goes
+  straight to `DONE`. Opening the branch or PR is left to a person.
+- A spec runs only when it is `READY` and all its dependencies are `DONE` or in `REVIEW`. An epic is `DONE`
+  only when all its specs are `DONE`.
 - `workflow` starts one fresh agent per eligible spec, in dependency order, and writes a report to
   `.ae-sdlc-runtime/runs/<run>/report.json`.
 - Nothing is retried automatically. A failed or crashed spec ends `BLOCKED` until you requeue it.
@@ -88,7 +123,7 @@ DRAFT ──(no blocking questions)──> READY ──> IN_PROGRESS ──> DON
 ### Where work items live
 
 ```bash
-ae-sdlc backend connect linear    # or: jira. Stores credentials, discovers team/project and statuses
+ae-sdlc backend connect linear    # or: jira. Stores the key in the project's git-ignored .env as AE_SDLC_LINEAR_API_KEY, discovers team/project and statuses
 ae-sdlc backend doctor            # checks the active backend with real read-only calls
 ae-sdlc backend use local         # back to Markdown in docs/product/
 ```
@@ -141,9 +176,9 @@ with a `SECURITY:` comment.
 
 **What the existing measures do and do not do.**
 
-- The tracker credentials file uses mode `600`. This stops other users from reading it. It does not
+- The tracker credentials file uses mode `600`, and a new project `.env` is created with it. This stops other users from reading it. It does not
   stop an agent running as the same user.
-- `LINEAR_*` and `ATLASSIAN_*` are removed from the agent's environment, and the prompt tells the
+- `LINEAR_*`, `ATLASSIAN_*` and the project-scoped `AE_SDLC_LINEAR_API_KEY` / `AE_SDLC_ATLASSIAN_*` are removed from the agent's environment, and the prompt tells the
   agent not to call the tracker. This keeps secrets out of the environment. The file on disk is still
   readable.
 - Deny rules for `.env` and `credentials.json` match file names only. They are not an isolation boundary.
@@ -176,7 +211,7 @@ thrown away.
 - The runner does not trust the agent's report. It validates every result against the schema itself,
   for every provider (`work/result.py`, standard library only). It also compares `changed_files` with
   what really changed in the git working tree during the run (`work/worktree.py`). A spec becomes
-  `DONE` only on exit code 0, a valid `COMPLETED` result, a working tree that changed, and no claimed
+  `DONE` (or `REVIEW`) only on exit code 0, a valid `COMPLETED` result, a working tree that changed, and no claimed
   file left unchanged. Anything else ends `BLOCKED`. Changes the agent did not list are recorded in the
   run report under `verification`, but do not fail the run
 - `pytest`, with a fake MCP server for backend tests; `uv` / `pipx` for install
@@ -195,8 +230,7 @@ and a check that an unattended run refuses to start without a sandbox. Live trac
 
 Layout: `src/ae_sdlc/` is the installer and the remote-backend code. `src/ae_sdlc/data/core` holds the
 shared runtime, docs and schemas copied into projects. `src/ae_sdlc/data/providers/<name>` holds
-per-agent skills, config and adapters. `harness/` contains the older per-provider copies and will be
-removed once parity is confirmed. Design notes and the backend plan are in `docs/`.
+per-agent skills, config and adapters. Design notes and the backend plan are in `docs/`.
 
 ## Known limitations
 

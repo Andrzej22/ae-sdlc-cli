@@ -106,6 +106,15 @@ def test_unknown_ids_and_statuses_rejected(project, work):
         work.backend.transition("SPEC-001", "SHIPPED")
 
 
+def test_local_backend_has_no_review_step(project, work):
+    write_spec(project, "SPEC-001")
+    work.backend.store.scan_once()
+    assert work.service.completion_status == "DONE"
+    with pytest.raises(work.errors.InvalidTransition, match="no review"):
+        work.backend.transition("SPEC-001", "REVIEW")
+    assert work.backend.get("SPEC-001").status == "READY"
+
+
 def test_any_valid_transition_stays_permitted(project, work):
     """Decision D1: the local backend keeps no transition table."""
     write_spec(project, "SPEC-001", status="DONE")

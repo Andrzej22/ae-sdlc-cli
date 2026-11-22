@@ -65,6 +65,11 @@ class JiraWorkBackend:
         self._types: list[dict] | None = None
         self._checked_types: set[str] = set()
 
+    @property
+    def supports_review(self) -> bool:
+        """True only when [jira] status_review names the project's review status."""
+        return self.policy.has_review
+
     # --- provider access ---
 
     def _call(self, name: str, arguments: dict[str, Any], *, read: bool = False) -> ToolResponse:
@@ -255,7 +260,7 @@ class JiraWorkBackend:
         """
         if item.kind not in {"epic", "spec"}:
             raise ValueError(f"invalid kind: {item.kind}")
-        if item.status not in set(Status):
+        if item.status not in set(Status) or item.status == Status.REVIEW:
             raise InvalidTransition(f"invalid status: {item.status}")
         if not item.title:
             raise ValueError("a Jira work item needs a title")
@@ -383,6 +388,8 @@ class JiraWorkBackend:
         """Apply the status and confirm it by reading it back. Retrying after a failure is safe."""
         if target_status not in set(Status):
             raise InvalidTransition(f"invalid status: {target_status}")
+        if target_status == Status.REVIEW and not self.supports_review:
+            raise InvalidTransition("no review status is configured; set status_review under [jira]")
         item = self._fetch(work_id)
         try:
             confirmed = self._apply_until_confirmed(item, target_status)

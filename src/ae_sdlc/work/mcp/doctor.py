@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ..backend import WorkBackendError
@@ -118,8 +119,9 @@ def _probe_jira(client: McpClient, settings: Mapping[str, str], probe: _Probe) -
         policy = StatusPolicy(settings)
         statuses = invoke(client, operation("jira", "list_statuses"), {"mode": "project", "projectKey": key},
                           cloud_id=cloud_id, retry_safe=True).data
-        check_mapping(policy, statuses, [settings.get("issue_type_spec") or "Task",
-                                         settings.get("issue_type_epic") or "Epic"])
+        epic_type = settings.get("issue_type_epic") or "Epic"
+        check_mapping(policy, statuses, [settings.get("issue_type_spec") or "Task", epic_type],
+                      review_exempt=[epic_type])
         return policy
     probe.run("live: status mapping", status_mapping, lambda policy: policy.describe())
     names = ("live: comments", "live: relationships", "live: transitions")
@@ -139,7 +141,8 @@ def _probe_jira(client: McpClient, settings: Mapping[str, str], probe: _Probe) -
               lambda data: _names(data, "transitions"))
 
 
-def run_doctor(provider: str, settings: Mapping[str, str], env: Mapping[str, str] = os.environ) -> list[Check]:
+def run_doctor(provider: str, settings: Mapping[str, str], env: Mapping[str, str] = os.environ,
+               root: Path | None = None) -> list[Check]:
     checks: list[Check] = []
     missing = [key for key in _SETTINGS[provider] if not settings.get(key)]
     if missing:
@@ -149,7 +152,7 @@ def run_doctor(provider: str, settings: Mapping[str, str], env: Mapping[str, str
     shown = [*_SETTINGS[provider], *(["project"] if provider == "linear" and settings.get("project") else [])]
     checks.append(Check("configuration", OK, ", ".join(f"{k}={settings[k]}" for k in shown)))
     try:
-        credential = auth.resolve(provider, env)
+        credential = auth.resolve(provider, env, root)
         url = provider_endpoint(provider, env)
     except WorkBackendError as exc:
         checks.append(_failure_check("credentials", exc))

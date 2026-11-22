@@ -6,7 +6,7 @@ Epics and specs live in one active backend: `local` (Markdown under `docs/produc
 | --- | --- | --- | --- | --- |
 | Where work lives | `docs/product/` | the team | one project of the team | the project |
 | Epic | `docs/product/epics/EPIC-*.md` | a new Project | Issue labelled `ae-sdlc-epic` | Epic |
-| Spec | Markdown file | Issue | sub-issue of its epic, or a standalone Issue | Task, or the configured work type |
+| Spec | Markdown file | Issue in the epic's Project, or a standalone Issue | sub-issue of its epic, or a standalone Issue | Task, or the configured work type |
 | Dependency | `dependencies:` frontmatter | blocked-by relation | blocked-by relation | `Blocks` link |
 | Comments | not supported | yes | yes | yes |
 
@@ -30,6 +30,8 @@ team = "Andrzej22"
 project = "ae-sdlc-test"   # optional; see below
 ```
 
+An epic is for two or more independent specs. A single spec is a standalone item: in Linear a Project holding one issue is noise.
+
 ### Linear: one project for all work
 
 Without `project`, every epic becomes a new Linear Project. With `project` set under `[linear]`, all work goes into that one project, as with a Jira project: an epic is an Issue labelled `ae-sdlc-epic` and its specs are sub-issues. The project can be created by hand in Linear; `backend connect linear` lists the team's projects to choose from, or set the project's name, `P-…` identifier or slug yourself. ae-sdlc never changes the project's own status, and `status`, `work list` and `workflow` take the epic's issue key (`AND-7`), not the project. Changing `project` later does not move existing work.
@@ -44,12 +46,15 @@ The plan's suggested `[work.context]` and `[work.execution]` tables are not read
 
 The first match is used, per provider:
 
-1. Environment: `LINEAR_API_KEY`; `ATLASSIAN_SERVICE_ACCOUNT_KEY`, or `ATLASSIAN_EMAIL` with `ATLASSIAN_API_TOKEN`.
-2. `~/.config/ae-sdlc/credentials.toml` (respects `XDG_CONFIG_HOME`; `AE_SDLC_CREDENTIALS_FILE` overrides the path), which must have mode `600`.
+1. Project-scoped, with the `AE_SDLC_` prefix: `AE_SDLC_LINEAR_API_KEY`; `AE_SDLC_ATLASSIAN_SERVICE_ACCOUNT_KEY`, or `AE_SDLC_ATLASSIAN_EMAIL` with `AE_SDLC_ATLASSIAN_API_TOKEN`. Read from the process environment, then from `.env` in the project root. The file is only read, never executed, and its mode is not checked (unlike `credentials.toml`), because other tools share it.
+2. Environment: `LINEAR_API_KEY`; `ATLASSIAN_SERVICE_ACCOUNT_KEY`, or `ATLASSIAN_EMAIL` with `ATLASSIAN_API_TOKEN`.
+3. `~/.config/ae-sdlc/credentials.toml` (respects `XDG_CONFIG_HOME`; `AE_SDLC_CREDENTIALS_FILE` overrides the path), which must have mode `600`.
 
-`backend connect` writes that file through a hidden prompt. Never put a token in `work.toml` or on a command line.
+The prefixed names come first so that a key bound to one project is never overridden by an ambient `LINEAR_API_KEY` that belongs to another workspace, which fails as `unknown work item` because the issue is not visible to that key.
 
-Coding agents never inherit `LINEAR_*` or `ATLASSIAN_*`. For interactive `prepare-work` and `execute-work`, whose agent runs `ae-sdlc work` itself, credentials found in the environment are moved to a temporary mode-600 file for the length of the run; `AE_SDLC_CREDENTIALS_FILE` gives the agent its path, not the secret, and the file is deleted afterwards. Credentials from `credentials.toml` are used as they are.
+`backend connect` writes the key to the project's `.env` through a hidden prompt (replacing only the `AE_SDLC_*` lines and keeping the rest and the file's mode; a new file gets `600`) and adds `.env` to `.gitignore` when git does not already ignore it. Never put a token in `work.toml` or on a command line. The Claude provider's `settings.json` denies the agent's Read and Edit of `.env`.
+
+Coding agents never inherit `LINEAR_*` or `ATLASSIAN_*`. For interactive `prepare-work` and `execute-work`, whose agent runs `ae-sdlc work` itself, credentials found in the environment are moved to a temporary mode-600 file for the length of the run; `AE_SDLC_CREDENTIALS_FILE` gives the agent its path, not the secret, and the file is deleted afterwards. Credentials from `.env` or `credentials.toml` are used as they are.
 
 **Linear** needs an API key whose user can read the team and create issues, projects, labels and comments.
 
@@ -62,10 +67,15 @@ Coding agents never inherit `LINEAR_*` or `ATLASSIAN_*`. For interactive `prepar
 | `DRAFT` | backlog or triage | `status_draft` |
 | `READY` | unstarted | `status_ready`; plus the label `ae-sdlc-ready` when it shares a status with `DRAFT` |
 | `IN_PROGRESS` | started | `status_in_progress` |
+| `REVIEW` | the started state named by `status_review`; not available without it | `status_review`; not available without it |
 | `BLOCKED` | a native Blocked state, or the label `ae-sdlc-blocked` | `status_blocked`, or the label `ae-sdlc-blocked` |
 | `DONE` | completed | `status_done` |
 
-In Linear, `status_<canonical>` in `[linear]` pins a state by name. A canceled Linear issue never runs and never satisfies a dependency. A Jira status outside the mapping is shown as it is, never runs and never satisfies a dependency. Provider workflows are never modified.
+**Review step (Linear and Jira, optional).** Without `status_review`, a finished spec goes straight to `DONE`, and `DONE` means implemented in the working tree, not merged. With `status_review = "In Review"` under `[linear]` or `[jira]` (`backend connect` offers it when the team or project has such a state), a finished spec goes to `REVIEW` and waits there until a person marks it Done in the tracker. On Linear `status_review` must name a `started` state other than the In Progress one; on Jira it must name a status no other canonical status uses, and the project's spec type must offer a move to it (`backend doctor` checks that the status exists for the spec type; the epic type is not checked, because an epic never goes to review). A spec in `REVIEW` satisfies its dependents, so a run can continue through a chain; only `DONE` specs complete an epic. Opening the branch or pull request is left to a person. The local backend has no review step. Without `status_review` on Jira, a person moving an issue to the workflow's own review status leaves it outside the mapping: it is shown as it is, never runs and never satisfies a dependency.
+
+When the runner starts a spec, Linear also assigns it to the owner of the API key, if the server accepts an `assignee` argument.
+
+In Linear, `status_<canonical>` in `[linear]` pins a state by name. A canceled Linear issue never runs and never satisfies a dependency. A Jira status outside the mapping (including a review status that `status_review` does not name) is shown as it is, never runs and never satisfies a dependency. Provider workflows are never modified.
 
 ## Comments
 

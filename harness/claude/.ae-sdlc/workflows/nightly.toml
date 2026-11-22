@@ -1,7 +1,0 @@
-name = "nightly"
-max_specs = 10
-continue_on_failure = true
-parallelism = 1
-
-[selection]
-status = "READY"

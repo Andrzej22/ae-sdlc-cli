@@ -65,16 +65,16 @@ def _prompt_values(provider: str) -> dict[str, str]:
     return {"email": input("Atlassian account email: ").strip(), "api_token": getpass.getpass("API token: ").strip()}
 
 
-def _obtain_credential(provider: str) -> tuple[auth.Credential, dict[str, str] | None]:
+def _obtain_credential(provider: str, root: Path) -> tuple[auth.Credential, dict[str, str] | None]:
     """Return the credential and, when newly typed, the values to store once they are verified."""
-    existing = auth.resolve_optional(provider)
+    existing = auth.resolve_optional(provider, root=root)
     if existing is not None:
         if existing.source == "env" or not sys.stdin.isatty():
             return existing, None
         if input("Replace the stored credentials? [y/N]: ").strip().lower() != "y":
             return existing, None
     elif not sys.stdin.isatty():
-        return auth.resolve(provider), None  # raises the actionable "not found" error
+        return auth.resolve(provider, root=root), None  # raises the actionable "not found" error
     values = _prompt_values(provider)
     credential = auth.build_credential(provider, values, "prompt")
     if credential is None:
@@ -82,20 +82,52 @@ def _obtain_credential(provider: str) -> tuple[auth.Credential, dict[str, str] |
     return credential, values
 
 
+def _pick_review(found: list[str], owner: str, section: str) -> dict[str, str]:
+    """Offer a status named like "In Review" as the review step. It changes what DONE means, so a person decides."""
+    if not found:
+        return {}
+    if not sys.stdin.isatty():
+        print(f"review: {owner} has {found[0]!r}; run this command in a terminal to use it as the review step "
+              f"(or set status_review under [{section}])")
+        return {}
+    print("Finished work can wait in a review state for a person to mark it Done, instead of going straight to Done.")
+    name = _choose("review step", [("", "none: finished work goes straight to Done"),
+                                   *((n, f"{n}: finished work waits here until a person marks it Done") for n in found)])
+    return {"status_review": name} if name else {}
+
+
+def _offer_review(client: McpClient, team: str) -> dict[str, str]:
+    statuses = rows(client.call("list_issue_statuses", {"team": team}, retry_safe=True).data, "statuses", "nodes")
+    found = [str(s["name"]) for s in statuses if s.get("type") == "started" and "review" in str(s.get("name")).lower()]
+    return _pick_review(found, "the team", "linear")
+
+
+def _offer_jira_review(statuses: list[dict], mapping: dict[str, str]) -> dict[str, str]:
+    """Offer a project status named like "In Review" that the confirmed mapping does not already use."""
+    taken = {name.lower() for name in mapping.values()}
+    found = [str(s["name"]) for s in statuses if "review" in str(s.get("name", "")).lower()
+             and str(s["name"]).lower() not in taken]
+    return _pick_review(found, "the project", "jira")
+
+
 def _discover_linear(client: McpClient) -> dict[str, str]:
     teams = rows(client.call("list_teams", {"limit": 250}, retry_safe=True).data, "teams", "nodes")
     team = _choose("team", [(str(t["name"]), str(t["name"])) for t in teams if t.get("name")])
+    return {"team": team, **_discover_project(client, team), **_offer_review(client, team)}
+
+
+def _discover_project(client: McpClient, team: str) -> dict[str, str]:
     found = rows(client.call("list_projects", {"team": team, "limit": 50}, retry_safe=True).data, "projects", "nodes")
     names = sorted({str(p["name"]) for p in found if p.get("name")})
     if not names:
-        return {"team": team}
+        return {}
     if not sys.stdin.isatty():
         print("project: none, so each epic becomes its own Linear project "
               "(run this command in a terminal to choose one, or set project under [linear])")
-        return {"team": team}
+        return {}
     project = _choose("project", [("", "none: each epic becomes its own Linear project"),
                                   *((name, f"{name}: all work goes here, epics are issues") for name in names)])
-    return {"team": team, **({"project": project} if project else {})}
+    return {"project": project} if project else {}
 
 
 def _confirm_statuses(statuses: list[dict]) -> dict[str, str]:
@@ -127,16 +159,18 @@ def _discover_jira(client: McpClient) -> dict[str, str]:
                                    for p in rows(projects, "values", "projects") if p.get("key")])
     statuses = invoke(client, operation("jira", "list_statuses"), {"mode": "project", "projectKey": key},
                       cloud_id=cloud_id, retry_safe=True).data
-    return {"cloud_id": cloud_id, "project_key": key, **_confirm_statuses(rows(statuses, "statuses"))}
+    listed = rows(statuses, "statuses")
+    mapping = _confirm_statuses(listed)
+    return {"cloud_id": cloud_id, "project_key": key, **mapping, **_offer_jira_review(listed, mapping)}
 
 
 def connect(root: Path, provider: str) -> int:
-    credential, values = _obtain_credential(provider)
+    credential, values = _obtain_credential(provider, root)
     with McpClient(provider_endpoint(provider), credential) as client:
         settings = _discover_linear(client) if provider == "linear" else _discover_jira(client)
     if values is not None:
-        path = auth.save(provider, values)
-        print(f"Credentials stored in {path} (mode 600)")
+        path = auth.save_project(root, provider, values)
+        print(f"Credentials stored in {path} (mode 600, ignored by git)")
     config = read_config(root)
     config[provider] = settings
     write_config(root, config)
@@ -155,14 +189,14 @@ def _print_checks(checks: list[Any]) -> None:
 
 
 def doctor(root: Path, provider: str) -> int:
-    checks = run_doctor(provider, _settings(root, provider))
+    checks = run_doctor(provider, _settings(root, provider), root=root)
     _print_checks(checks)
     print("Write operations are verified against the tool catalog only; the doctor never creates data.")
     return 0 if healthy(checks) else 1
 
 
 def use(root: Path, provider: str) -> int:
-    checks = run_doctor(provider, _settings(root, provider))
+    checks = run_doctor(provider, _settings(root, provider), root=root)
     if not healthy(checks):
         _print_checks(checks)
         print(f"Backend not changed: {provider} failed the checks above.", file=sys.stderr)
@@ -179,7 +213,7 @@ def open_service(root: Path) -> Iterator[WorkService]:
     if name not in _REMOTE_BACKENDS:
         yield WorkService(load_backend(root), root=root)  # local, or the error naming an unknown backend
         return
-    with McpClient(provider_endpoint(name), auth.resolve(name)) as client:
+    with McpClient(provider_endpoint(name), auth.resolve(name, root=root)) as client:
         yield WorkService(_REMOTE_BACKENDS[name](client, _settings(root, name)), root=root)
 
 
@@ -195,7 +229,7 @@ def run_workflow(root: Path, argv: list[str]) -> int:
     providers = importlib.import_module("providers")
     try:
         name = backend_name(root)
-        credential = auth.resolve(name)  # once, because agents must not inherit it from the environment
+        credential = auth.resolve(name, root=root)  # once, because agents must not inherit it from the environment
     except WorkBackendError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return exc.exit_code

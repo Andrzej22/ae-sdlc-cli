@@ -200,7 +200,7 @@ class _Run:
     def _finish(self, context: ExecutionContext, rc: int, result: dict, verification: dict | None = None) -> bool:
         """Record the outcome and return whether the run may treat this spec as a success."""
         spec_id = context.item.id
-        finished = decide_outcome(rc, result, f"{self.provider} exited {rc}")
+        finished = decide_outcome(rc, result, f"{self.provider} exited {rc}", context.completion_status)
         findings, dropped = select_findings(result, context)
         update = {
             "work_id": spec_id, "target_status": finished.target, "blocker": finished.blocker,

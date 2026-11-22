@@ -37,15 +37,20 @@ BACKGROUND_TAIL = (
 
 def remove_tracker_credentials_from_env() -> None:
     """Agent subprocesses inherit this environment and must not receive tracker credentials."""
-    for name in [n for n in os.environ if n.startswith(("LINEAR_", "ATLASSIAN_"))]:
+    # AE_SDLC_LINEAR_MCP_URL is an endpoint override, not a credential, and stays.
+    for name in [n for n in os.environ if n.startswith(("LINEAR_", "ATLASSIAN_", "AE_SDLC_ATLASSIAN_"))
+                 or n == "AE_SDLC_LINEAR_API_KEY"]:
         del os.environ[name]
 
 
 # Per backend: the credentials-file section and the environment variable behind each of its keys.
 _CREDENTIAL_ENV = {
-    "linear": ("linear", {"LINEAR_API_KEY": "api_key"}),
+    # The project-scoped AE_SDLC_* name comes last, so it wins as it does in credential resolution.
+    "linear": ("linear", {"LINEAR_API_KEY": "api_key", "AE_SDLC_LINEAR_API_KEY": "api_key"}),
     "jira": ("atlassian", {"ATLASSIAN_SERVICE_ACCOUNT_KEY": "service_account_key", "ATLASSIAN_EMAIL": "email",
-                           "ATLASSIAN_API_TOKEN": "api_token"}),
+                           "ATLASSIAN_API_TOKEN": "api_token",
+                           "AE_SDLC_ATLASSIAN_SERVICE_ACCOUNT_KEY": "service_account_key",
+                           "AE_SDLC_ATLASSIAN_EMAIL": "email", "AE_SDLC_ATLASSIAN_API_TOKEN": "api_token"}),
 }
 
 

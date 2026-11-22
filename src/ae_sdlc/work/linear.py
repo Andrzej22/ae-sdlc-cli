@@ -73,7 +73,7 @@ class LinearWorkBackend:
         self.project = settings.get("project") or None
         self._issue_keys: dict[str, str] = {}  # issue UUID -> identifier, for parent references
         self._mapping: StatusMapping | None = None
-        self._tools: set[str] | None = None
+        self._catalog_cache: dict[str, Any] | None = None
         self._labels: set[str] = set()
 
     # --- provider access ---
@@ -81,12 +81,25 @@ class LinearWorkBackend:
     def _call(self, name: str, arguments: dict[str, Any], *, read: bool = False) -> ToolResponse:
         return invoke(self.client, operation("linear", name), arguments, retry_safe=read)
 
+    def _catalog(self) -> dict[str, Any]:
+        if self._catalog_cache is None:
+            self._catalog_cache = {tool.name: tool for tool in self.client.list_tools()}
+        return self._catalog_cache
+
     def _require(self, name: str) -> None:
-        if self._tools is None:
-            self._tools = {tool.name for tool in self.client.list_tools()}
         op = operation("linear", name)
-        if not is_available(op, self._tools):
+        if not is_available(op, set(self._catalog())):
             raise CapabilityMissing(f"Linear does not offer {op.tool} to this credential, needed for {name}")
+
+    def _accepts(self, name: str, argument: str) -> bool:
+        """Whether the tool's published schema has this argument. Without a schema the answer is no."""
+        tool = self._catalog().get(operation("linear", name).tool)
+        schema = getattr(tool, "input_schema", None) or {}
+        return argument in (schema.get("properties") or {})
+
+    @property
+    def supports_review(self) -> bool:
+        return self.mapping.has_review
 
     def _pages(self, name: str, arguments: dict[str, Any], key: str) -> list[dict]:
         found: list[dict] = []
@@ -434,6 +447,8 @@ class LinearWorkBackend:
         if target_status not in set(Status):
             raise InvalidTransition(f"invalid status: {target_status}")
         item = self._fetch(work_id)
+        if self._is_project(item) and target_status == Status.REVIEW:
+            raise InvalidTransition(f"{item.id} is a Linear project, which has no review status")
         try:
             if self._is_project(item):
                 self._require("create_epic")
@@ -453,6 +468,8 @@ class LinearWorkBackend:
 
     def _transition_arguments(self, item: WorkItem, target: str) -> dict[str, Any]:
         arguments: dict[str, Any] = {"id": item.id, "state": self.mapping.state_for(target)}
+        if target == Status.IN_PROGRESS and self._accepts("transition_issue", "assignee"):
+            arguments["assignee"] = "me"  # the person whose key runs this, as when Linear starts an issue
         has_label = BLOCKED_LABEL in item.metadata["labels"]
         if target == Status.BLOCKED and self.mapping.uses_blocked_label:
             if not has_label:

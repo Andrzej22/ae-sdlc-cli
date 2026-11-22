@@ -35,6 +35,8 @@ def _slug(title: str | None) -> str:
 
 
 class LocalWorkBackend:
+    supports_review = False
+
     def __init__(self, store: WorkStore):
         self.store = store
 
@@ -95,7 +97,7 @@ class LocalWorkBackend:
             raise WorkItemExists(f"work item already exists: {item.id}")
         if item.kind not in {"epic", "spec"}:
             raise ValueError(f"invalid kind: {item.kind}")
-        if item.status not in set(Status):
+        if item.status not in set(Status) or item.status == Status.REVIEW:
             raise InvalidTransition(f"invalid status: {item.status}")
         if not item.id:
             if existing := self._same_work(item):
@@ -147,6 +149,8 @@ class LocalWorkBackend:
     def transition(self, work_id: str, target_status: str, blocker: str | None = None) -> WorkItem:
         if target_status not in set(Status):
             raise InvalidTransition(f"invalid status: {target_status}")
+        if target_status == Status.REVIEW:
+            raise InvalidTransition("the local backend has no review status")
         self._record(work_id)
         self.store.set_status(work_id, target_status, blocker=blocker)
         return self.get(work_id)

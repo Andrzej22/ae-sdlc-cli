@@ -2,6 +2,9 @@
 
 Linear groups states into fixed types, so the defaults follow the type and survive renamed states.
 `status_<canonical>` settings in [linear] pin a state by name. The team's workflow is never modified.
+
+REVIEW exists only when `status_review` names a started state other than the one IN_PROGRESS uses
+(for example "In Review"). Without it the team has no review step: finished work goes straight to DONE.
 """
 from __future__ import annotations
 
@@ -25,9 +28,13 @@ def _setting(status: Status) -> str:
 
 @dataclass(frozen=True)
 class StatusMapping:
-    states: dict[str, str]  # canonical status -> state name; BLOCKED only when the team has such a state
+    states: dict[str, str]  # canonical status -> state name; REVIEW and BLOCKED only when the team has them
     pinned: dict[str, str]  # lowercase state name -> canonical status, from settings or a native Blocked state
     types: dict[str, str]  # lowercase state name -> state type
+
+    @property
+    def has_review(self) -> bool:
+        return Status.REVIEW in self.states
 
     @property
     def uses_blocked_label(self) -> bool:
@@ -73,6 +80,14 @@ def build_status_mapping(team_states: list[dict], settings: Mapping[str, str]) -
     if states[Status.DRAFT].lower() == states[Status.READY].lower():
         raise CapabilityMissing(f"DRAFT and READY both map to {states[Status.DRAFT]!r}; "
                                 "set status_draft or status_ready to distinct states")
+
+    review = pinned_state(Status.REVIEW)
+    if review:
+        # In Progress and In Review share the type "started", so a review step is only ever known by name.
+        if types[review.lower()] != "started" or review.lower() == states[Status.IN_PROGRESS].lower():
+            raise WorkConfigError(f"[linear] {_setting(Status.REVIEW)}: {review!r} must be a started state "
+                                  f"other than {states[Status.IN_PROGRESS]!r}")
+        states[Status.REVIEW] = review
 
     blocked = pinned_state(Status.BLOCKED)
     if blocked is None and "blocked" in by_name and types["blocked"] not in {"completed", "canceled"}:

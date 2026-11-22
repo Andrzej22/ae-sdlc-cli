@@ -31,7 +31,7 @@ Run one workflow runner per project. `ae-sdlc workflow` holds a lock under `.ae-
 
 | Run outcome | Status | In the run report |
 | --- | --- | --- |
-| `COMPLETED`, agent exit 0 | `DONE` | `completed` |
+| `COMPLETED`, agent exit 0 | `DONE`, or `REVIEW` on Linear or Jira with `status_review` | `completed` |
 | `BLOCKED`, `NEEDS_INPUT` | `BLOCKED`, reason from the agent | `blocked` |
 | `FAILED`, `PARTIAL`, agent crash, no result | `BLOCKED`, reason starts with `Execution failed:` | `failed` |
 

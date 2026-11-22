@@ -10,8 +10,14 @@ class Status(StrEnum):
     DRAFT = "DRAFT"
     READY = "READY"
     IN_PROGRESS = "IN_PROGRESS"
+    REVIEW = "REVIEW"  # optional: only on a backend whose workflow has a review step
     DONE = "DONE"
     BLOCKED = "BLOCKED"
+
+
+# A spec in review is implemented and its code is in the checkout, so it unblocks its dependents.
+# Only DONE completes an epic.
+SATISFIES_DEPENDENCY = frozenset({Status.REVIEW, Status.DONE})
 
 
 class RunOutcome(StrEnum):

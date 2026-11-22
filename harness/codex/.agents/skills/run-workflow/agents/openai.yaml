@@ -1,3 +1,0 @@
-interface:
-  display_name: "run-workflow"
-  short_description: "Run the deterministic unattended spec scheduler."

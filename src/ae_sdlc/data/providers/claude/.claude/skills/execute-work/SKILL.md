@@ -73,7 +73,7 @@ Before coding, run once per selected spec:
 ae-sdlc work start <ID>
 ```
 
-It checks that the spec is `READY` with its dependencies `DONE`, marks it `IN_PROGRESS`, and prints JSON with the full spec (`item`), its `epic`, `dependencies`, `related` items, recent `comments`, and the current revision.
+It checks that the spec is `READY` with its dependencies `DONE` or in `REVIEW`, marks it `IN_PROGRESS`, and prints JSON with the full spec (`item`), its `epic`, `dependencies`, `related` items, recent `comments`, and the current revision.
 
 If it exits non-zero, that spec was not started: report `error.message` instead of guessing, and do not implement it. If `resumed` is true, the spec was already `IN_PROGRESS`; say so in the final response.
 
@@ -120,7 +120,7 @@ Never edit workflow status yourself. After implementation, write the result for 
 ae-sdlc work finish <ID> --result-file .ae-sdlc-runtime/result-<ID>.json
 ```
 
-`COMPLETED` moves the spec to `DONE`; every other status moves it to `BLOCKED` with the reason recorded. If the command fails, repeat it once at most, then report the error; never redo the implementation because of it.
+`COMPLETED` moves the spec to `DONE`, or to `REVIEW` when the tracker's workflow has a review step; every other status moves it to `BLOCKED` with the reason recorded. If the command fails, repeat it once at most, then report the error; never redo the implementation because of it.
 
 Add a comment only for a finding someone must act on, not for progress. Write the text to a file under `.ae-sdlc-runtime/`, then run `ae-sdlc work comment <ID> --text-file <file>`. The local backend does not store comments and answers `capability_missing`; put the finding in the final response instead.
 

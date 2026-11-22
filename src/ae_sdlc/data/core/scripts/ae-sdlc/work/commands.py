@@ -51,8 +51,8 @@ def _parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("list", help="print the specs of a spec or epic")
     p.add_argument("scope")
-    p.add_argument("--status", choices=["DRAFT", "READY", "IN_PROGRESS", "DONE", "BLOCKED"])
-    p.add_argument("--eligible", action="store_true", help="only specs whose dependencies are DONE")
+    p.add_argument("--status", choices=["DRAFT", "READY", "IN_PROGRESS", "REVIEW", "DONE", "BLOCKED"])
+    p.add_argument("--eligible", action="store_true", help="only specs whose dependencies are DONE or in REVIEW")
 
     p = sub.add_parser("lookup", help="search existing work by text")
     p.add_argument("query")

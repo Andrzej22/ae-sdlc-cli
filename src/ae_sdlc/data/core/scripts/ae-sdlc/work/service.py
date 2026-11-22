@@ -6,10 +6,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .backend import InvalidInput, InvalidTransition, RevisionConflict, WorkBackend, WorkBackendError, WorkItemNotFound
-from .models import RunOutcome, Status, WorkComment, WorkItem
+from .models import SATISFIES_DEPENDENCY, RunOutcome, Status, WorkComment, WorkItem
 from .pending import PendingUpdates
 
-_STATUS_ORDER = [Status.DRAFT, Status.READY, Status.IN_PROGRESS, Status.BLOCKED, Status.DONE]
+_STATUS_ORDER = [Status.DRAFT, Status.READY, Status.IN_PROGRESS, Status.REVIEW, Status.BLOCKED, Status.DONE]
 EXECUTION_FAILED_PREFIX = "Execution failed: "
 # Exit codes of failures that may pass: credentials and availability. Anything else will not change.
 _RETRYABLE_EXIT_CODES = {7, 8}
@@ -22,6 +22,7 @@ class ExecutionContext:
     dependencies: list[WorkItem] = field(default_factory=list)
     comments: list[WorkComment] = field(default_factory=list)
     related: list[WorkItem] = field(default_factory=list)
+    completion_status: str = Status.DONE  # where a COMPLETED run leaves the spec on this backend
 
 
 @dataclass
@@ -32,15 +33,18 @@ class FinishedExecution:
     blocker: str | None = None
 
 
-def decide_outcome(exit_code: int, result: dict, fallback_reason: str) -> FinishedExecution:
-    """Only a successful COMPLETED run reaches DONE; everything else is BLOCKED, with its cause kept.
+def decide_outcome(exit_code: int, result: dict, fallback_reason: str,
+                   completion_status: str = Status.DONE) -> FinishedExecution:
+    """Only a successful COMPLETED run reaches completion_status; everything else is BLOCKED, with its cause kept.
+
+    completion_status is DONE, or REVIEW on a backend with a review step.
 
     A product blocker carries the agent's reason. A failed run also ends BLOCKED, on every backend,
     so that nothing repeats it automatically, but its reason says that the execution failed.
     """
     outcome = result.get("status")
     if exit_code == 0 and outcome == RunOutcome.COMPLETED:
-        return FinishedExecution("completed", result.get("summary", ""))
+        return FinishedExecution("completed", result.get("summary", ""), completion_status)
     needs_decision = outcome in {RunOutcome.BLOCKED, RunOutcome.NEEDS_INPUT}
     default = "needs input" if needs_decision else fallback_reason
     reason = "; ".join(result.get("blockers") or []) or result.get("summary") or default
@@ -54,9 +58,14 @@ class WorkService:
         self.backend = backend
         self.pending = PendingUpdates(root) if root else None
 
+    @property
+    def completion_status(self) -> str:
+        """DONE, or REVIEW when the backend's workflow has a review step."""
+        return Status.REVIEW if getattr(self.backend, "supports_review", False) else Status.DONE
+
     def _dependency_done(self, work_id: str) -> bool:
         try:
-            return self.backend.get(work_id).status == Status.DONE
+            return self.backend.get(work_id).status in SATISFIES_DEPENDENCY
         except WorkItemNotFound:
             return False
 
@@ -79,7 +88,7 @@ class WorkService:
 
     def finish_execution(self, work_id: str, exit_code: int, result: dict, fallback_reason: str) -> FinishedExecution:
         """Apply an agent result to the tracker."""
-        finished = decide_outcome(exit_code, result, fallback_reason)
+        finished = decide_outcome(exit_code, result, fallback_reason, self.completion_status)
         self.backend.transition(work_id, finished.target, blocker=finished.blocker)
         return finished
 
@@ -90,6 +99,7 @@ class WorkService:
         is not a compare-and-swap, so the single-runner rule is what actually prevents a double run.
         """
         context = self.prepare_execution_context(listed.id, comment_limit)
+        context.completion_status = self.completion_status
         item = context.item
         if item.status != listed.status:
             raise InvalidTransition(f"{item.id} is now {item.status}, not {listed.status}")
@@ -100,10 +110,11 @@ class WorkService:
         return context
 
     def _require_dependencies_done(self, context: ExecutionContext) -> None:
-        done = {d.id for d in context.dependencies if d.status == Status.DONE}
-        unmet = [d for d in context.item.dependencies if d not in done]
+        met = {d.id for d in context.dependencies if d.status in SATISFIES_DEPENDENCY}
+        unmet = [d for d in context.item.dependencies if d not in met]
         if unmet:
-            raise InvalidTransition(f"{context.item.id} is waiting for dependencies that are not DONE: {', '.join(unmet)}")
+            raise InvalidTransition(f"{context.item.id} is waiting for dependencies that are not DONE or in REVIEW: "
+                                    f"{', '.join(unmet)}")
 
     def apply_update(self, update: dict) -> list[dict]:
         """Apply an owed update and return the comments the tracker refused for good.
@@ -113,8 +124,10 @@ class WorkService:
         """
         item = self.backend.get(update["work_id"])
         target, blocker = update["target_status"], update.get("blocker")
-        if item.status != target or (blocker and item.blocker != blocker):
-            if item.status != target and item.status not in update["allowed_from"]:
+        # A person may already have moved a spec on from REVIEW to DONE.
+        reached = item.status == target or (target == Status.REVIEW and item.status == Status.DONE)
+        if not reached or (blocker and item.blocker != blocker):
+            if not reached and item.status not in update["allowed_from"]:
                 raise InvalidTransition(f"{item.id} is {item.status}; expected one of {', '.join(update['allowed_from'])}")
             self.backend.transition(item.id, target, blocker=blocker)
         refused = []
@@ -202,10 +215,12 @@ class WorkService:
             raise InvalidInput("result summary must be a string")
 
         item = self.backend.get(work_id)
-        target = Status.DONE if outcome == RunOutcome.COMPLETED else Status.BLOCKED
-        if item.status == target:
+        completed = outcome == RunOutcome.COMPLETED
+        target = self.completion_status if completed else Status.BLOCKED
+        reached = item.status == target or (completed and item.status == Status.DONE)  # DONE: moved on from REVIEW
+        if reached:
             needs_decision = outcome in {RunOutcome.BLOCKED, RunOutcome.NEEDS_INPUT}
-            disposition = "completed" if target == Status.DONE else "blocked" if needs_decision else "failed"
+            disposition = "completed" if completed else "blocked" if needs_decision else "failed"
             return item, FinishedExecution(disposition, result.get("summary", "")), True
         if item.status != Status.IN_PROGRESS:
             raise InvalidTransition(f"{item.id} is {item.status}; only an IN_PROGRESS spec can be finished")
